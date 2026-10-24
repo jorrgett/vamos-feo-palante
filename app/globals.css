@@ -1,26 +1,410 @@
+/* Orden de capas: las utilidades de Tailwind siempre le ganan a las piezas propias. */
+@layer theme, base, vaca, components, utilities;
 @import "tailwindcss";
 
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* ── Tokens: "la libreta de los panas" ─────────────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #f3ead8;
+  --bg-2: #ebe0c9;
+  --card: #fffaf0;
+  --card-2: #f5ecda;
+  --line: rgb(70 45 20 / 0.13);
+  --line-strong: rgb(70 45 20 / 0.24);
+  --text: #231c16;
+  --muted: #73685a;
+  --faint: #8a7f70;
+  --ink: #231c16;
+  --pop: #231c16;
+  --dots: rgb(90 60 30 / 0.13);
+  --mango: #f0562a;
+  --mango-ink: #c2410c;
+  --sun: #ffd84d;
+  --sun-ink: #231c16;
+  --coral: #ff5a3c;
+  --mint: #0f8f6b;
+  --mint-soft: rgb(15 143 107 / 0.12);
+  --rose: #d9363e;
+  --rose-soft: rgb(217 54 62 / 0.1);
+  --sky: #1f7fc4;
+  --violet: #7b5cd6;
+  --cashea: #ffd84d;
+  --cashea-ink: #1a1600;
+  /* Dorado legible sobre el fondo (íconos y etiquetas "amarillas" fuera de un fondo amarillo) */
+  --gold: #9a5b00;
+  --gold-soft: rgb(217 150 0 / 0.16);
+  /* Texto e íconos encima de un color fuerte (naranja, verde, rojo) */
+  --on-color: #fffaf0;
+  --shadow: 3px 3px 0 rgb(35 28 22 / 0.09);
+  --ring: 0 0 0 3px rgb(255 106 61 / 0.35);
+  --viz-usd: #2a78d6;
+  --viz-usdt: #d97706;
+  --viz-eur: #6250d6;
+  --viz-pos: #0b8fa8;
+  --viz-neg: #e2483d;
+  --viz-bar: #d97706;
+  --viz-grid: rgb(70 45 20 / 0.10);
+  color-scheme: light;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+:root[data-theme="dark"] {
+  --bg: #15121a;
+  --bg-2: #1b1721;
+  --card: #201b27;
+  --card-2: #29232f;
+  --line: rgb(255 240 220 / 0.09);
+  --line-strong: rgb(255 240 220 / 0.17);
+  --text: #f6ecdc;
+  --muted: #b3a797;
+  --faint: #948a7d;
+  --ink: #08060a;
+  --pop: #000000;
+  --dots: rgb(255 240 220 / 0.06);
+  --mango: #ff8257;
+  --mango-ink: #ffb08f;
+  --sun: #ffd84d;
+  --sun-ink: #231c16;
+  --coral: #ff6b52;
+  --mint: #4fd8a8;
+  --mint-soft: rgb(79 216 168 / 0.13);
+  --rose: #ff7a80;
+  --rose-soft: rgb(255 122 128 / 0.13);
+  --sky: #5cc8ff;
+  --violet: #b69cff;
+  --cashea: #ffe14d;
+  --cashea-ink: #1a1600;
+  --gold: #ffd84d;
+  --gold-soft: rgb(255 216 77 / 0.16);
+  --on-color: #15121a;
+  --shadow: 3px 3px 0 rgb(0 0 0 / 0.35);
+  --ring: 0 0 0 3px rgb(255 130 87 / 0.4);
+  --viz-usd: #3987e5;
+  --viz-usdt: #c98500;
+  --viz-eur: #9085e9;
+  --viz-pos: #139e9a;
+  --viz-neg: #e5604a;
+  --viz-bar: #c98500;
+  --viz-grid: rgb(255 240 220 / 0.07);
+  color-scheme: dark;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root:not([data-theme="light"]) {
+    --bg: #15121a;
+    --bg-2: #1b1721;
+    --card: #201b27;
+    --card-2: #29232f;
+    --line: rgb(255 240 220 / 0.09);
+    --line-strong: rgb(255 240 220 / 0.17);
+    --text: #f6ecdc;
+    --muted: #b3a797;
+    --faint: #948a7d;
+    --ink: #08060a;
+    --pop: #000000;
+    --dots: rgb(255 240 220 / 0.06);
+    --mango: #ff8257;
+    --mango-ink: #ffb08f;
+    --sun: #ffd84d;
+    --sun-ink: #231c16;
+    --coral: #ff6b52;
+    --mint: #4fd8a8;
+    --mint-soft: rgb(79 216 168 / 0.13);
+    --rose: #ff7a80;
+    --rose-soft: rgb(255 122 128 / 0.13);
+    --sky: #5cc8ff;
+    --violet: #b69cff;
+    --cashea: #ffe14d;
+    --cashea-ink: #1a1600;
+    --gold: #ffd84d;
+    --gold-soft: rgb(255 216 77 / 0.16);
+    --on-color: #15121a;
+    --shadow: 3px 3px 0 rgb(0 0 0 / 0.35);
+    --ring: 0 0 0 3px rgb(255 130 87 / 0.4);
+    --viz-usd: #3987e5;
+    --viz-usdt: #c98500;
+    --viz-eur: #9085e9;
+    --viz-pos: #139e9a;
+    --viz-neg: #e5604a;
+    --viz-bar: #c98500;
+    --viz-grid: rgb(255 240 220 / 0.07);
+    color-scheme: dark;
   }
 }
 
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-2: var(--bg-2);
+  --color-card: var(--card);
+  --color-card-2: var(--card-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-ink: var(--ink);
+  --color-pop: var(--pop);
+  --color-mango: var(--mango);
+  --color-mango-ink: var(--mango-ink);
+  --color-sun: var(--sun);
+  --color-sun-ink: var(--sun-ink);
+  --color-coral: var(--coral);
+  --color-mint: var(--mint);
+  --color-mint-soft: var(--mint-soft);
+  --color-rose: var(--rose);
+  --color-rose-soft: var(--rose-soft);
+  --color-sky: var(--sky);
+  --color-violet: var(--violet);
+  --color-cashea: var(--cashea);
+  --color-cashea-ink: var(--cashea-ink);
+  --color-gold: var(--gold);
+  --color-gold-soft: var(--gold-soft);
+  --color-on-color: var(--on-color);
+  --color-viz-usd: var(--viz-usd);
+  --color-viz-usdt: var(--viz-usdt);
+  --color-viz-eur: var(--viz-eur);
+  --color-viz-pos: var(--viz-pos);
+  --color-viz-neg: var(--viz-neg);
+  --color-viz-bar: var(--viz-bar);
+  --color-viz-grid: var(--viz-grid);
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-hand), var(--font-geist), ui-sans-serif, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --shadow-soft: var(--shadow);
+}
+
+/* ── Base ────────────────────────────────────────────────────────────── */
+html {
+  background-color: var(--bg);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--text);
+  font-family: var(--font-sans);
+  min-height: 100dvh;
+  -webkit-font-smoothing: antialiased;
+  /* Color sólido: el iPhone pinta la barra de estado con el fondo del <body> o de la barra fija de arriba. */
+  background-color: var(--bg);
+}
+
+/* Hoja punteada de libreta (va en el contenedor de cada pantalla, no en <body>) */
+.paper {
+  background-image: radial-gradient(var(--dots) 1.1px, transparent 1.3px);
+  background-size: 22px 22px;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--sun) 70%, transparent);
+  color: var(--sun-ink);
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.display {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  border-radius: 0.75rem;
+}
+
+/* iPhone: los campos de fecha/hora tienen ancho propio y se salen de la tarjeta */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+  max-width: 100%;
+  display: block;
+  min-height: 2.875rem;
+  text-align: left;
+}
+input[type="date"]::-webkit-date-and-time-value,
+input[type="time"]::-webkit-date-and-time-value {
+  text-align: left;
+  margin: 0;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* ── Piezas reutilizables ─────────────────────────────────────────────── */
+@layer vaca {
+  .card {
+    background: var(--card);
+    border: 1.5px solid var(--line-strong);
+    border-radius: 1.25rem;
+    box-shadow: var(--shadow);
+  }
+
+  /* Sticker: borde de tinta y sombra dura, para lo importante */
+  .sticker {
+    border: 2px solid var(--ink);
+    border-radius: 1.4rem;
+    box-shadow: 5px 5px 0 var(--pop);
+  }
+
+  .btn-pop {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 999px;
+    border: 2px solid var(--ink);
+    background: var(--mango);
+    color: var(--on-color);
+    font-weight: 700;
+    box-shadow: 3px 3px 0 var(--pop);
+    transition: transform 0.12s, box-shadow 0.12s, filter 0.12s;
+  }
+  .btn-pop:hover {
+    filter: brightness(1.05);
+  }
+  .btn-pop:active {
+    transform: translate(2px, 2px);
+    box-shadow: 1px 1px 0 var(--pop);
+  }
+  .btn-pop-sun {
+    background: var(--sun);
+    color: var(--sun-ink);
+  }
+  .btn-pop-paper {
+    background: var(--card);
+    color: var(--text);
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    border-radius: 999px;
+    padding: 0.25rem 0.625rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: var(--card-2);
+    border: 1.5px solid var(--line);
+    white-space: nowrap;
+  }
+
+  .field {
+    width: 100%;
+    border-radius: 0.9rem;
+    border: 1.5px solid var(--line-strong);
+    background: var(--card);
+    padding: 0.7rem 0.9rem;
+    font-size: 1rem;
+    color: var(--text);
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+  }
+  .field::placeholder {
+    color: var(--faint);
+  }
+  .field:focus {
+    outline: none;
+    border-color: var(--mango);
+    box-shadow: var(--ring);
+  }
+
+  .label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 0.4rem;
+  }
+
+  /* Subrayado de resaltador */
+  .marker {
+    background: linear-gradient(transparent 58%, color-mix(in oklab, var(--sun) 85%, transparent) 58%, color-mix(in oklab, var(--sun) 85%, transparent) 92%, transparent 92%);
+    padding: 0 0.15em;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+
+  /* Cinta adhesiva decorativa */
+  .tape {
+    position: absolute;
+    width: 86px;
+    height: 24px;
+    background: color-mix(in oklab, var(--sun) 55%, white);
+    opacity: 0.85;
+    border-left: 2px dashed rgb(0 0 0 / 0.08);
+    border-right: 2px dashed rgb(0 0 0 / 0.08);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  }
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--card-2) 25%, var(--line-strong) 50%, var(--card-2) 75%);
+  background-size: 300% 100%;
+  animation: skeleton 1.4s ease-in-out infinite;
+  border-radius: 0.75rem;
+}
+@keyframes skeleton {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@keyframes flow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+.flow {
+  stroke-dasharray: 6 6;
+  animation: flow 1.2s linear infinite;
+}
+
+@keyframes wobble {
+  0%, 100% {
+    transform: rotate(-3deg) translateY(0);
+  }
+  50% {
+    transform: rotate(2deg) translateY(-3px);
+  }
+}
+.wobble {
+  animation: wobble 2.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+.safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+}
+.safe-bottom-sheet {
+  padding-bottom: max(calc(env(safe-area-inset-bottom) + 1rem), 2rem);
 }

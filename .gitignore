@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# base local de desarrollo
+/.pglite
+scripts/cuentas-prueba.env
+
+# skills locales del asistente (no son parte de la app)
+/.agents
+skills-lock.json

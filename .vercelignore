@@ -1,0 +1,5 @@
+.pglite
+.next
+node_modules
+scripts/cuentas-prueba.env
+.env*
