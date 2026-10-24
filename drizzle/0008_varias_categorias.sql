@@ -1,0 +1,1 @@
+ALTER TABLE "expenses" ADD COLUMN "extra_categories" text[] DEFAULT '{}'::text[] NOT NULL;
