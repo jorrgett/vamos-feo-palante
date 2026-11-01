@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { allocate, fmt, parseAmount, toUsdCents } from "../lib/money";
 import { computeSplit } from "../lib/split";
 import { computeBalances, pairwiseDebts, simplifyDebts } from "../lib/balances";
-import { casheaSchedule, inClubDays, installmentStatus, mirrorForDebtor, mirrorStatus } from "../lib/cashea";
+import { casheaSchedule, inClubDays, installmentStatus, mirrorForDebtor, mirrorStatus, reconcileCuotas } from "../lib/cashea";
 import { debtSplit, paidProgress, remainingTo, shareStatuses } from "../lib/share-status";
 import { auditLedger } from "../lib/audit";
 import { categoriesOf, categoryLabel } from "../lib/constants";
@@ -355,6 +355,40 @@ t("avisos de cuota: a 3, 2, 1 y 0 días; el diario solo cobra lo vencido", () =>
   const late = dailyReminders([salida], "2026-10-27").find((x) => x.userId === "uj")!;
   assert.equal(late.title, "Se te venció la cuota 1 de «PIÑATA»");
   assert.ok(late.body.startsWith("$ 1,33"));
+});
+
+t("cuotas: se puede marcar cualquier cuota, en cualquier orden", () => {
+  const rows = [1, 2, 3].map((n) => ({ n, dueDate: `2026-11-0${n}`, amountUsd: 100 }));
+  const base = { owedUsd: 300, holderPutUsd: 300, planTotalUsd: 300, rows, at: "2026-10-30" };
+  // Pagó solo la 3: la próxima sigue siendo la 1.
+  const s = mirrorStatus({ ...base, payments: [{ id: "a", amountUsd: 100, cuotaN: 3 }] });
+  assert.deepEqual(s.parts.map((p) => p.restUsd), [100, 100, 0]);
+  assert.equal(s.next!.n, 1);
+  // Un pago sin cuota llena la más vieja libre, sin pisar la que ya está pagada.
+  const s2 = mirrorStatus({ ...base, payments: [{ id: "a", amountUsd: 100, cuotaN: 1 }, { id: "b", amountUsd: 100 }] });
+  assert.deepEqual(s2.parts.map((p) => p.restUsd), [0, 0, 100]);
+});
+
+t("cuotas: marcar y desmarcar, también sobre un pago viejo del total", () => {
+  const parts = [{ n: 0, usd: 0 }, { n: 1, usd: 100 }, { n: 2, usd: 100 }, { n: 3, usd: 100 }];
+  // Marcar la 2 sin pagos: solo agrega esa.
+  assert.deepEqual(reconcileCuotas({ parts, payments: [], wanted: [2] }), { add: [{ cuotaN: 2, usd: 100 }], removed: [], deleteIds: [], recreate: [] });
+  // Se marcó todo de una, pero solo pagó la 1: el pago se rehace y queda solo esa.
+  const lump = reconcileCuotas({ parts, payments: [{ id: "x", amountUsd: 300 }], wanted: [1] });
+  assert.deepEqual(lump.removed, [2, 3]);
+  assert.deepEqual(lump.deleteIds, ["x"]);
+  assert.deepEqual(lump.recreate, [{ fromId: "x", cuotaN: 1, usd: 100 }]);
+  // Quitar la 1 de un pago de dos cuotas: la plata no vuelve a caer en la 1.
+  const two = reconcileCuotas({ parts, payments: [{ id: "x", amountUsd: 200 }], wanted: [2] });
+  assert.deepEqual(two.recreate, [{ fromId: "x", cuotaN: 2, usd: 100 }]);
+  // Un pago con su cuota que no se toca, se queda igual.
+  const keep = reconcileCuotas({ parts, payments: [{ id: "a", amountUsd: 100, cuotaN: 1 }, { id: "b", amountUsd: 100, cuotaN: 2 }], wanted: [1] });
+  assert.deepEqual(keep.deleteIds, ["b"]);
+  assert.deepEqual(keep.recreate, []);
+  // Un abono a medias no se borra solo; si se marca, se completa lo que falta.
+  const half = [{ id: "x", amountUsd: 50 }];
+  assert.deepEqual(reconcileCuotas({ parts, payments: half, wanted: [] }).deleteIds, []);
+  assert.deepEqual(reconcileCuotas({ parts, payments: half, wanted: [1] }).add, [{ cuotaN: 1, usd: 50 }]);
 });
 
 console.log(`\n${n} pruebas OK`);

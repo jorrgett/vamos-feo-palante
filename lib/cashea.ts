@@ -141,14 +141,71 @@ export type MirrorStatus = {
   totalRestUsd: number;
 };
 
+export type CuotaPayment = { id: string; amountUsd: number; cuotaN?: number | null };
+type PartLike = { n: number; usd: number };
+
+/** Reparte los pagos entre las cuotas: los que dicen su cuota van a esa; los demás llenan las más viejas. */
+function allocatePayments(parts: PartLike[], payments: CuotaPayment[]) {
+  const room = new Map(parts.map((p) => [p.n, p.usd]));
+  const slices: { id: string; n: number | null; usd: number }[] = [];
+  const pool: { id: string; usd: number }[] = [];
+  for (const p of payments) {
+    let left = p.amountUsd;
+    if (p.cuotaN != null && room.has(p.cuotaN)) {
+      const take = Math.min(left, room.get(p.cuotaN)!);
+      if (take > 0) {
+        slices.push({ id: p.id, n: p.cuotaN, usd: take });
+        room.set(p.cuotaN, room.get(p.cuotaN)! - take);
+        left -= take;
+      }
+    }
+    if (left > 0) pool.push({ id: p.id, usd: left });
+  }
+  for (const q of pool) {
+    let left = q.usd;
+    for (const part of parts) {
+      const free = room.get(part.n)!;
+      if (left <= 0 || free <= 0) continue;
+      const take = Math.min(left, free);
+      slices.push({ id: q.id, n: part.n, usd: take });
+      room.set(part.n, free - take);
+      left -= take;
+    }
+    if (left > 0) slices.push({ id: q.id, n: null, usd: left });
+  }
+  return { slices, room };
+}
+
+/**
+ * Qué cambiar para que queden pagadas exactamente las cuotas de `wanted`. Las cuotas con un abono a
+ * medias no se tocan salvo que se marquen. Si se quita una cuota, los pagos sin cuota se rehacen cuota
+ * por cuota: si no, esa plata volvería a caer en la cuota que se acaba de quitar.
+ */
+export function reconcileCuotas(input: { parts: PartLike[]; payments: CuotaPayment[]; wanted: number[] }) {
+  const parts = input.parts.filter((p) => p.usd > 0);
+  const { slices, room } = allocatePayments(parts, input.payments);
+  const wanted = new Set(input.wanted);
+  const isPaid = (n: number) => (room.get(n) ?? 0) <= 1;
+  const add = parts.filter((p) => !isPaid(p.n) && wanted.has(p.n)).map((p) => ({ cuotaN: p.n, usd: room.get(p.n)! }));
+  const removed = new Set(parts.filter((p) => isPaid(p.n) && !wanted.has(p.n)).map((p) => p.n));
+  if (removed.size === 0) return { add, removed: [] as number[], deleteIds: [] as string[], recreate: [] as { fromId: string; cuotaN: number; usd: number }[] };
+  const touched = input.payments.filter((p) => p.cuotaN == null || slices.some((s) => s.id === p.id && (s.n !== p.cuotaN || (s.n != null && removed.has(s.n))))).map((p) => p.id);
+  const recreate = slices
+    .filter((s): s is { id: string; n: number; usd: number } => touched.includes(s.id) && s.n != null && !removed.has(s.n))
+    .map((s) => ({ fromId: s.id, cuotaN: s.n, usd: s.usd }));
+  return { add, removed: [...removed], deleteIds: touched, recreate };
+}
+
 /**
  * Reparte lo que un pana le debe al dueño del Cashea entre la inicial y las cuotas (en proporción a
  * cada cuota, con suma exacta). Si el dueño puso parte en efectivo, esa parte se debe de una (va con la inicial).
- * Lo que ya pagó se descuenta de las cuotas más viejas primero.
+ * Lo que ya pagó se descuenta de la cuota que diga cada pago o, si no dice, de las más viejas primero.
  */
 export function mirrorStatus(input: {
   owedUsd: number;
-  paidUsd: number;
+  /** Lo pagado sin cuota específica (si no se pasan los pagos uno por uno). */
+  paidUsd?: number;
+  payments?: CuotaPayment[];
   /** Lo que el dueño del Cashea puso en la cuenta (Cashea + efectivo). */
   holderPutUsd: number;
   planTotalUsd: number;
@@ -163,12 +220,15 @@ export function mirrorStatus(input: {
   const split = weights.some((w) => w > 0) ? allocate(byCashea, weights) : rows.map((_, i) => (i === 0 ? byCashea : 0));
   // Lo que no va por Cashea (efectivo del dueño) se debe desde el día de la compra.
   if (split.length) split[0] += owed - byCashea;
-  let paid = Math.max(0, input.paidUsd);
+  const payments = input.payments ?? [{ id: "pagado", amountUsd: Math.max(0, input.paidUsd ?? 0) }];
+  const { room } = allocatePayments(
+    rows.map((r, i) => ({ n: r.n, usd: split[i] ?? 0 })),
+    payments,
+  );
   const parts: MirrorPart[] = rows.map((r, i) => {
-    const usd = split[i] ?? 0;
-    const covered = Math.min(usd, paid);
-    paid -= covered;
-    return { n: r.n, dueDate: r.dueDate, usd, restUsd: usd - covered };
+    const left = room.get(r.n) ?? 0;
+    // Un céntimo de redondeo no deja una cuota pendiente.
+    return { n: r.n, dueDate: r.dueDate, usd: split[i] ?? 0, restUsd: left <= 1 ? 0 : left };
   });
   const sum = (xs: MirrorPart[]) => xs.reduce((a, p) => a + p.restUsd, 0);
   const nextPart = parts.find((p) => p.restUsd > 0) ?? null;
@@ -198,9 +258,9 @@ export function mirrorForDebtor(plan: MirrorPlanLike | null | undefined, e: Expe
   if (!plan || plan.mode !== "espejo" || debtor === plan.memberId) return null;
   const owedUsd = debtSplit(e, debtor).find((p) => p.to === plan.memberId)?.amountUsd ?? 0;
   if (owedUsd <= 0) return null;
-  const paidUsd = linked.filter((l) => l.fromMember === debtor && l.toMember === plan.memberId).reduce((a, l) => a + l.amountUsd, 0);
+  const payments = linked.filter((l) => l.fromMember === debtor && l.toMember === plan.memberId).map((l, i) => ({ id: l.id ?? String(i), amountUsd: l.amountUsd, cuotaN: l.cuotaN }));
   const holderPutUsd = e.payers.filter((p) => p.memberId === plan.memberId).reduce((a, p) => a + p.amountUsd, 0);
-  return { holderId: plan.memberId, count: plan.installments, ...mirrorStatus({ owedUsd, paidUsd, holderPutUsd, planTotalUsd: plan.totalUsd, rows: plan.rows, at }) };
+  return { holderId: plan.memberId, count: plan.installments, ...mirrorStatus({ owedUsd, payments, holderPutUsd, planTotalUsd: plan.totalUsd, rows: plan.rows, at }) };
 }
 
 /** «la inicial» o «la cuota 2». */

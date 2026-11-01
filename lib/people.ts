@@ -17,6 +17,8 @@ export type PersonItem = {
   closed: boolean;
   /** Si se paga por cuotas de Cashea (espejo): la próxima cuota y cuánto hay que pagar para ponerse al día. */
   cuota?: { n: number; count: number; dueDate: string; daysLeft: number; payUsd: number } | null;
+  /** Si la salida se anotó en bolívares: la tasa de ese día (se paga al equivalente de hoy). */
+  registeredRate?: number | null;
 };
 
 export type PersonBalance = {
@@ -58,6 +60,7 @@ export function personBalances(bundles: Bundle[]): PersonBalance[] {
         date: ymdOf(e.spentAt),
         rateSource: ledger.group.rateSource,
         closed: !!ledger.group.closedAt,
+        registeredRate: e.currency === "VES" ? e.fx.vesPerUsd : null,
       };
       for (const other of ledger.members) {
         if (!other.userId || other.id === me) continue;

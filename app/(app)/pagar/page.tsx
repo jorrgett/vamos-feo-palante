@@ -24,7 +24,7 @@ export default async function Pagar({ searchParams }: { searchParams: Promise<{ 
     avatar: b.avatar,
     color: b.color,
     amount: b.iOwe,
-    items: b.iOweItems.map((i) => ({ salidaId: i.salidaId, title: i.title, emoji: i.emoji, date: i.date, remainingUsd: i.remainingUsd, rateSource: i.rateSource, cuota: i.cuota ?? null })),
+    items: b.iOweItems.map((i) => ({ salidaId: i.salidaId, title: i.title, emoji: i.emoji, date: i.date, remainingUsd: i.remainingUsd, rateSource: i.rateSource, cuota: i.cuota ?? null, registeredRate: i.registeredRate ?? null })),
     payInfo: infos.find((x) => x.id === b.userId)?.payInfo ?? {},
   }));
   return (

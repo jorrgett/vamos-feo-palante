@@ -294,6 +294,8 @@ export const settlements = pgTable(
       .references(() => members.id, { onDelete: "cascade" }),
     /** Si el pago es "su parte" de una cuenta concreta (checklist de quién ya pagó). */
     expenseId: uuid("expense_id").references(() => expenses.id, { onDelete: "set null" }),
+    /** Cashea en espejo: la cuota que cubre este pago. Sin cuota, cubre las más viejas primero. */
+    cuotaN: integer("cuota_n"),
     currency: text("currency").notNull(),
     amount: money("amount").notNull(),
     amountUsd: money("amount_usd").notNull(),

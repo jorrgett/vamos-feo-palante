@@ -31,6 +31,9 @@ export function checklistRows(ledger: Ledger): ChecklistRow[] {
       creditorUserId: byId.get(parts[0]?.to ?? "")?.userId ?? null,
       iCollect: parts.some((x) => x.to === me),
       pendingIdsForMe: linked.filter((l) => l.fromMember === st.memberId && l.toMember === me && !l.confirmedAt).map((l) => l.id),
+      // Quién marca los pagos: el que cobra o quien anotó la salida.
+      canMark: parts.some((x) => x.to === me) || (!!ledger.group.createdBy && ledger.group.createdBy === ledger.me.userId),
+      cuotaParts: mirror?.parts.filter((p) => p.usd > 0).map((p) => ({ n: p.n, dueDate: p.dueDate, usd: p.usd, restUsd: p.restUsd })) ?? null,
       cuota:
         mirror?.next != null
           ? {

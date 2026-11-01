@@ -7,7 +7,8 @@ import { getLedger } from "@/lib/data";
 import { categoriesOf, categoryLabel, categoryOf, payMethodOf } from "@/lib/constants";
 import { longDay, ymdOf } from "@/lib/dates";
 import { fmt, fmtNumber, type Currency } from "@/lib/money";
-import { RATE_META, type RateSourceId } from "@/lib/rates-shared";
+import { getRates } from "@/lib/rates";
+import { RATE_META, vesPerUsd, type RateSourceId } from "@/lib/rates-shared";
 import { casheaPlanOf, checklistRows } from "@/lib/salida-view";
 import { mirrorForDebtor } from "@/lib/cashea";
 import { paidProgress } from "@/lib/share-status";
@@ -48,11 +49,16 @@ export default async function SalidaPage({ params }: { params: Promise<{ id: str
     ? Object.fromEntries(
         e.shares.flatMap((s) => {
           const m = mirrorForDebtor(mirrorPlan, eLike, payments, s.memberId);
-          return m ? [[s.memberId, m.parts.map((p) => ({ n: p.n, usd: p.usd, restUsd: p.restUsd }))]] : [];
+          return m ? [[s.memberId, m.parts.map((p) => ({ n: p.n, dueDate: p.dueDate, usd: p.usd, restUsd: p.restUsd }))]] : [];
         }),
       )
     : undefined;
   const closed = !!ledger.group.closedAt;
+  // En bolívares la deuda se mantiene en dólares: mientras la salida siga abierta se muestra el equivalente de hoy.
+  const rateToday = vesPerUsd(await getRates(), ledger.group.rateSource as RateSourceId);
+  const bsToday = cur === "VES" && !closed;
+  const totalShown = bsToday ? Math.round(e.amountUsd * rateToday) : e.amount;
+  const bsMoved = bsToday && Math.abs(totalShown - e.amount) > 100;
   const people = ledger.members.filter((m) => !m.leftAt || e.shares.some((s) => s.memberId === m.id));
 
   return (
@@ -78,8 +84,13 @@ export default async function SalidaPage({ params }: { params: Promise<{ id: str
           <div className="mt-3 flex justify-center">
             <AvatarStack people={people.map((m) => ({ emoji: m.avatar, color: m.color, name: m.name }))} size={30} max={8} />
           </div>
-          <p className="num mt-4 text-5xl font-bold tracking-tight">{fmt(e.amount, cur)}</p>
+          <p className="num mt-4 text-5xl font-bold tracking-tight">{fmt(totalShown, cur)}</p>
           {cur !== "USD" && <p className="num mt-1 text-muted">{fmt(e.amountUsd, "USD")}</p>}
+          {bsMoved && (
+            <p className="mx-auto mt-3 max-w-sm rounded-2xl bg-sun/30 px-3 py-2 text-xs text-text">
+              💱 Se anotó en <span className="num font-semibold">{fmt(e.amount, "VES")}</span> a {fmtNumber(e.fx.vesPerUsd)} Bs/$. Como el bolívar cambia, la deuda se mantiene en dólares y se paga al equivalente del día (hoy {fmtNumber(rateToday)} Bs/$).
+            </p>
+          )}
           <p className="mt-3 text-xs text-muted">
             {categoryLabel(e)} · {MODE_LABEL[e.split.mode]} · tasa {src === "custom" ? "propia" : RATE_META[src].short} {fmtNumber(e.fx.vesPerUsd)} Bs/$
           </p>
@@ -120,7 +131,10 @@ export default async function SalidaPage({ params }: { params: Promise<{ id: str
                     <li key={s.id} className="flex items-center gap-3 py-2">
                       <Avatar emoji={m?.avatar ?? "🙂"} color={m?.color ?? "#9CA3AF"} size={26} />
                       <span className="flex-1 truncate">{s.memberId === me ? "Tú" : m?.name}</span>
-                      <span className="num w-28 text-right font-semibold">{fmt(s.amount, cur)}</span>
+                      <span className="num w-32 text-right font-semibold">
+                        {bsToday ? fmt(Math.round(s.amountUsd * rateToday), "VES") : fmt(s.amount, cur)}
+                        {bsToday && <span className="block text-[11px] font-normal text-muted">{fmt(s.amountUsd, "USD")}</span>}
+                      </span>
                     </li>
                   );
                 })}
@@ -170,6 +184,8 @@ export default async function SalidaPage({ params }: { params: Promise<{ id: str
           groupId={id}
           meId={me}
           canMark={plan.memberId === me || (!byId.get(plan.memberId)?.userId && ledger.group.createdBy === user.id)}
+          canMarkPanas={!closed && (plan.memberId === me || ledger.group.createdBy === user.id)}
+          groupRate={ledger.group.rateSource as RateSourceId}
           members={ledger.members.map((m) => ({ id: m.id, name: m.name, avatar: m.avatar, color: m.color }))}
           plan={{
             id: plan.id,

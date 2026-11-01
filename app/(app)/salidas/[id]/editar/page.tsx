@@ -1,3 +1,5 @@
+import { mirrorForDebtor } from "@/lib/cashea";
+import { casheaPlanOf } from "@/lib/salida-view";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -58,6 +60,12 @@ export default async function EditarSalida({ params }: { params: Promise<{ id: s
       )
         .filter((x) => x.status !== "puso")
         .map((x) => [K(x.memberId), x.status === "pagado" || x.status === "por-confirmar" ? "pagado" : (x.status as "parcial" | "falta")]),
+    ),
+    paidCuotas: Object.fromEntries(
+      e.shares.flatMap((sh) => {
+        const m = mirrorForDebtor(casheaPlanOf(ledger), { payers: e.payers, shares: e.shares }, ledger.settlements.filter((x) => x.expenseId === e.id), sh.memberId);
+        return m ? [[K(sh.memberId), m.parts.filter((p) => p.usd > 0 && p.restUsd === 0).map((p) => p.n)]] : [];
+      }),
     ),
     cashea: plan ? { level: plan.level, initialPct: plan.initialPct, installments: plan.installments, intervalDays: plan.intervalDays, mode: plan.mode, store: plan.store, line: plan.line } : null,
   };

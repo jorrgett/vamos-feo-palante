@@ -33,6 +33,8 @@ export type Creditor = {
     rateSource: string;
     /** Si se paga por cuotas de Cashea: la próxima (por defecto se paga esa). */
     cuota?: { n: number; count: number; dueDate: string; daysLeft: number; payUsd: number } | null;
+    /** Si se anotó en bolívares: la tasa de ese día. */
+    registeredRate?: number | null;
   }[];
   payInfo: PayInfo;
 };
@@ -69,6 +71,11 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll }: { cred
   const selected = c?.items.filter((i) => picked.includes(i.salidaId)) ?? [];
   const usd = selected.reduce((a, i) => a + amountOf(i), 0);
   const ves = selected.reduce((a, i) => a + Math.round(amountOf(i) * vesPerUsd(rates, i.rateSource as RateSourceId)), 0);
+  // Salidas anotadas en Bs a otra tasa: se le explica por qué el monto no es el de cuando se anotó.
+  const moved = selected
+    .filter((i) => i.registeredRate)
+    .map((i) => ({ title: i.title, then: Math.round(amountOf(i) * i.registeredRate!), now: Math.round(amountOf(i) * vesPerUsd(rates, i.rateSource as RateSourceId)) }))
+    .filter((x) => Math.abs(x.now - x.then) > 100);
   /** Solo las salidas donde paga menos que el total (una cuota). */
   const amounts = Object.fromEntries(selected.filter((i) => amountOf(i) < i.remainingUsd).map((i) => [i.salidaId, amountOf(i)]));
   const rateLabel = [...new Set(selected.map((i) => RATE_META[i.rateSource as RateSourceId]?.short ?? "BCV $"))].join(" / ");
@@ -228,9 +235,19 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll }: { cred
             <p className="text-xs font-bold opacity-70">Total a pagar</p>
             <p className="num text-3xl font-bold">{fmt(usd, "USD")}</p>
             <p className="num text-sm opacity-80">
-              {fmt(ves, "VES")} a {rateLabel || "BCV $"}
+              {fmt(ves, "VES")} a {rateLabel || "BCV $"} de hoy
             </p>
           </div>
+          {moved.length > 0 && (
+            <div className="mt-3 rounded-2xl bg-card-2 p-3 text-xs text-muted">
+              <p className="font-semibold text-text">💱 Se paga al equivalente de hoy</p>
+              {moved.map((x) => (
+                <p key={x.title} className="mt-1">
+                  «{x.title}» se anotó como <span className="num">{fmt(x.then, "VES")}</span>, pero el bolívar cambió: hoy son <b className="num text-text">{fmt(x.now, "VES")}</b>.
+                </p>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

@@ -20,6 +20,8 @@ import { getRates } from "@/lib/rates";
 import { vesPerUsd, type RateSourceId } from "@/lib/rates-shared";
 import { debtSplit, remainingTo, shareStatuses } from "@/lib/share-status";
 import { computeSplit, sharesToUsd, SplitError, type SplitInput } from "@/lib/split";
+import { dueLabel, mirrorForDebtor, reconcileCuotas, type MirrorPlanLike } from "@/lib/cashea";
+import { casheaPlanOf } from "@/lib/salida-view";
 
 const cents = z.number().int().min(0).max(1e13);
 const key = z.string().uuid();
@@ -77,6 +79,8 @@ const salidaSchema = z.object({
     })
     .optional(),
   paidMembers: z.array(key).max(60).optional(),
+  /** Cashea en espejo: las cuotas que ya pagó cada quien. */
+  paidCuotas: z.record(z.string(), z.array(z.number().int().min(0).max(60)).max(61)).optional(),
   unpaidMembers: z.array(key).max(60).optional(),
 });
 
@@ -152,6 +156,7 @@ export async function saveSalida(input: SalidaInput): Promise<ActionResult> {
   }
 
   const result = await db.transaction(async (tx) => {
+    let mirrorPlan: MirrorPlanLike | null = null;
     // 1 · La salida
     let salidaId = d.salidaId;
     const groupValues = { name: d.title, emoji: cat.emoji, color: cat.color, rateSource, description: d.place || null };
@@ -276,6 +281,7 @@ export async function saveSalida(input: SalidaInput): Promise<ActionResult> {
           paidRate: previouslyPaid.get(r.n)?.paidRate ?? null,
         })),
       );
+      if (d.cashea.mode === "espejo") mirrorPlan = { memberId: M(casheaPayers[0].memberId), mode: "espejo", totalUsd: orderUsd, installments: d.cashea.installments, rows: sched.rows };
     }
 
     // 5 · Quién ya pagó su parte
@@ -316,7 +322,22 @@ export async function saveSalida(input: SalidaInput): Promise<ActionResult> {
       }
     }
     if (rows.length) await tx.insert(schema.settlements).values(rows);
-    return { salidaId: salidaId!, eLike, memberOf };
+
+    // Cashea en espejo: quién ya pagó qué cuota.
+    for (const [k, wanted] of Object.entries(d.paidCuotas ?? {})) {
+      const plan = mirrorPlan as MirrorPlanLike | null;
+      const m = memberOf.get(k);
+      const mirror = m && plan ? mirrorForDebtor(plan, eLike, keep, m) : null;
+      if (!m || !plan || !mirror) continue;
+      await applyCuotas(tx, {
+        parts: mirror.parts,
+        rows: keep.filter((l) => l.fromMember === m && l.toMember === plan.memberId),
+        wanted,
+        base: { groupId: salidaId!, expenseId: expenseId!, fromMember: m, toMember: plan.memberId, createdBy: user.id, method: "otro", note: "Marcado al anotar la salida", currency: "USD", rate: null, rateSource: null, confirmedAt: plan.memberId === myMember ? new Date() : null },
+        toAmount: (usd) => usd,
+      });
+    }
+    return { salidaId: salidaId!, expenseId: expenseId!, eLike, memberOf, mirrorPlan: mirrorPlan as MirrorPlanLike | null };
   });
 
   if (!d.salidaId) {
@@ -324,6 +345,7 @@ export async function saveSalida(input: SalidaInput): Promise<ActionResult> {
     const rates = await getRates();
     const rate = vesPerUsd(rates, rateSource);
     const paidSet = new Set((d.paidMembers ?? []).map((k) => result.memberOf.get(k)));
+    const paidNow = await db.select().from(schema.settlements).where(and(eq(schema.settlements.expenseId, result.expenseId), isNull(schema.settlements.deletedAt)));
     const nameOfMember = (mid: string) => {
       const k = [...result.memberOf.entries()].find(([, v]) => v === mid)?.[0];
       return k === user.id ? user.name : (userById.get(k ?? "")?.name ?? "alguien");
@@ -335,6 +357,7 @@ export async function saveSalida(input: SalidaInput): Promise<ActionResult> {
           const mid = result.memberOf.get(p)!;
           const parts = debtSplit(result.eLike, mid);
           const owes = parts.reduce((a, x) => a + x.amountUsd, 0);
+          const mirror = mirrorForDebtor(result.mirrorPlan, result.eLike, paidNow, mid);
           return {
             userId: p,
             kind: "gasto" as const,
@@ -344,9 +367,11 @@ export async function saveSalida(input: SalidaInput): Promise<ActionResult> {
             body:
               owes <= 0
                 ? "Tú pusiste la plata 😎 Aquí vas a ver quién te paga."
-                : paidSet.has(mid)
+                : paidSet.has(mid) || (mirror && !mirror.next)
                   ? `Tu parte (${fmt(owes, "USD")}) ya aparece como pagada ✅`
-                  : `Te toca ${fmt(owes, "USD")} (${fmt(Math.round(owes * rate), "VES")}) para ${parts.map((x) => nameOfMember(x.to)).join(" y ")}. Toca para pagar.`,
+                  : mirror?.next
+                    ? `Te toca ${fmt(owes, "USD")} por cuotas de Cashea para ${parts.map((x) => nameOfMember(x.to)).join(" y ")}. Tu próxima: ${fmt(mirror.nextPayUsd, "USD")}, ${dueLabel(mirror.next.daysLeft)}.`
+                    : `Te toca ${fmt(owes, "USD")} (${fmt(Math.round(owes * rate), "VES")} a la tasa de hoy) para ${parts.map((x) => nameOfMember(x.to)).join(" y ")}. Toca para pagar.`,
             url: salidaUrl(result.salidaId),
           };
         }),
@@ -480,10 +505,107 @@ export async function markSharePaid(salidaId: string, memberId: string, method: 
   return { ok: true, id: first.id };
 }
 
+type SettlementInsert = typeof schema.settlements.$inferInsert;
+type SettlementRow = typeof schema.settlements.$inferSelect;
+type Tx = Parameters<Parameters<Awaited<ReturnType<typeof getDb>>["transaction"]>[0]>[0];
+
+/**
+ * Deja pagadas exactamente las cuotas de `wanted`: agrega lo que falta y quita lo desmarcado. Los pagos
+ * que se rehacen conservan su método, referencia, tasa y comprobante.
+ */
+async function applyCuotas(
+  tx: Tx,
+  o: {
+    parts: { n: number; usd: number }[];
+    rows: SettlementRow[];
+    wanted: number[];
+    base: Pick<SettlementInsert, "groupId" | "expenseId" | "fromMember" | "toMember" | "createdBy" | "method" | "note" | "currency" | "rate" | "rateSource"> & { confirmedAt: Date | null };
+    toAmount: (usd: number) => number;
+  },
+) {
+  const change = reconcileCuotas({ parts: o.parts, payments: o.rows.map((r) => ({ id: r.id, amountUsd: r.amountUsd, cuotaN: r.cuotaN })), wanted: o.wanted });
+  if (change.add.length) {
+    const batchId = randomUUID();
+    await tx.insert(schema.settlements).values(change.add.map((a) => ({ ...o.base, batchId, cuotaN: a.cuotaN, amount: o.toAmount(a.usd), amountUsd: a.usd, paidAt: new Date() })));
+  }
+  for (const id of change.deleteIds) {
+    const orig = o.rows.find((r) => r.id === id)!;
+    const slices = change.recreate.filter((r) => r.fromId === id);
+    if (slices.length) {
+      const made = await tx
+        .insert(schema.settlements)
+        .values(slices.map((x) => ({ ...orig, id: undefined, createdAt: undefined, cuotaN: x.cuotaN, amountUsd: x.usd, amount: Math.round((orig.amount * x.usd) / Math.max(1, orig.amountUsd)) })))
+        .returning({ id: schema.settlements.id });
+      // El comprobante sigue pegado a lo que queda del pago.
+      await tx.update(schema.paymentProofs).set({ settlementId: made[0].id }).where(eq(schema.paymentProofs.settlementId, id));
+    }
+    await tx.delete(schema.settlements).where(eq(schema.settlements.id, id));
+  }
+  return change;
+}
+
+/** Cuotas de Cashea que ya pagó un pana: se marcan o desmarcan en cualquier momento, una, varias o todas. */
+export async function setCuotasPaid(salidaId: string, memberId: string, cuotas: number[], method: string, currency: "USD" | "VES"): Promise<ActionResult> {
+  const user = await requireUser();
+  const ledger = await getLedger(salidaId, user.id);
+  const e = ledger?.expenses[0];
+  if (!ledger || !e) return { ok: false, error: "No encontré esa salida." };
+  const plan = casheaPlanOf(ledger);
+  const linked = linkedOf(ledger, e.id);
+  const mirror = mirrorForDebtor(plan, eLikeOf(e), linked, memberId);
+  if (!plan || !mirror) return { ok: false, error: "Esta salida no se paga por cuotas." };
+  if (plan.memberId !== ledger.me.id && ledger.group.createdBy !== user.id) return { ok: false, error: "Solo quien cobra o quien anotó la salida puede marcar las cuotas." };
+  if (ledger.group.closedAt) return { ok: false, error: "La salida está cerrada: ábrela para cambiar los pagos." };
+  if (!PAY_METHODS.some((m) => m.id === method)) method = "otro";
+  const rate = vesPerUsd(await getRates(), ledger.group.rateSource as RateSourceId);
+  const iAmHolder = plan.memberId === ledger.me.id;
+  const db = await getDb();
+  const change = await db.transaction((tx) =>
+    applyCuotas(tx, {
+      parts: mirror.parts,
+      rows: linked.filter((l) => l.fromMember === memberId && l.toMember === plan.memberId),
+      wanted: cuotas,
+      base: {
+        groupId: salidaId,
+        expenseId: e.id,
+        fromMember: memberId,
+        toMember: plan.memberId,
+        createdBy: user.id,
+        method,
+        note: `Cuota de «${e.title}»`.slice(0, 140),
+        currency,
+        rate: currency === "VES" ? rate : null,
+        rateSource: currency === "VES" ? ledger.group.rateSource : null,
+        confirmedAt: iAmHolder ? new Date() : null,
+      },
+      toAmount: (usd) => (currency === "VES" ? Math.round(usd * rate) : usd),
+    }),
+  );
+  if (!change.add.length && !change.removed.length) return { ok: true, id: salidaId };
+
+  const label = (ns: number[]) => `${ns.length === 1 ? "la" : "las"} ${ns.length === 1 ? "" : "cuotas "}${ns.map((n) => (n === 0 ? "inicial" : ns.length === 1 ? `cuota ${n}` : n)).join(", ")}`;
+  const added = change.add.map((a) => a.cuotaN);
+  const usd = change.add.reduce((a, x) => a + x.usd, 0);
+  const debtor = ledger.members.find((m) => m.id === memberId);
+  const holder = ledger.members.find((m) => m.id === plan.memberId);
+  const items: NotifyInput[] = [];
+  if (debtor?.userId) {
+    if (added.length) items.push({ userId: debtor.userId, groupId: salidaId, kind: "parte", emoji: "✅", title: `${user.name} marcó como pagada ${label(added)} de «${e.title}»`, body: `${fmt(usd, "USD")}. Si no es así, avísale 👀`, url: salidaUrl(salidaId) });
+    if (change.removed.length) items.push({ userId: debtor.userId, groupId: salidaId, kind: "parte", emoji: "↩️", title: `${user.name} desmarcó ${label(change.removed)} de «${e.title}»`, body: "Vuelve a estar pendiente. Si ya la pagaste, avísale 👀", url: salidaUrl(salidaId) });
+  }
+  if (!iAmHolder && holder?.userId && added.length)
+    items.push({ userId: holder.userId, groupId: salidaId, kind: "pago", emoji: "💸", title: `${debtor?.name} pagó ${label(added)} de «${e.title}». ¿Te llegó?`, body: `${fmt(currency === "VES" ? Math.round(usd * rate) : usd, currency)}. Lo anotó ${user.name}. Entra para confirmar.`, url: "/inicio#por-confirmar" });
+  await notify(items, user.id);
+  revalidatePath("/", "layout");
+  return { ok: true, id: salidaId };
+}
+
 export async function unmarkSharePaid(salidaId: string, memberId: string): Promise<ActionResult> {
   const user = await requireUser();
   const ledger = await getLedger(salidaId, user.id);
   if (!ledger) return { ok: false, error: "No tienes acceso a esa salida." };
+  const collects = ledger.settlements.some((s) => s.fromMember === memberId && s.toMember === ledger.me.id);
+  if (!collects && ledger.group.createdBy !== user.id) return { ok: false, error: "Solo quien cobra o quien anotó la salida puede deshacer un pago." };
   const db = await getDb();
   await db.delete(schema.settlements).where(and(eq(schema.settlements.groupId, salidaId), eq(schema.settlements.fromMember, memberId)));
   revalidatePath("/", "layout");
@@ -681,17 +803,20 @@ export async function remindPending(salidaId: string, onlyMember?: string): Prom
     (st) => (st.status === "falta" || st.status === "parcial") && (!onlyMember || st.memberId === onlyMember),
   );
   const items: NotifyInput[] = [];
+  const plan = casheaPlanOf(ledger);
   for (const st of pending) {
     const m = ledger.members.find((x) => x.id === st.memberId);
     if (!m?.userId) continue;
-    const rest = st.owesUsd - st.paidUsd;
+    // Por cuotas de Cashea se recuerda la próxima cuota, no el total.
+    const mirror = mirrorForDebtor(plan, eLikeOf(e), linkedOf(ledger, e.id), st.memberId);
+    const rest = mirror?.next ? mirror.nextPayUsd : st.owesUsd - st.paidUsd;
     items.push({
       userId: m.userId,
       groupId: salidaId,
       kind: "recordatorio",
       emoji: "💸",
-      title: `Te falta pagar tu parte de «${e.title}»`,
-      body: `${fmt(rest, "USD")} (${fmt(Math.round(rest * rate), "VES")}). Te lo recuerda ${user.name} 🙏 Toca para pagar.`,
+      title: mirror?.next ? `Tu ${mirror.next.n === 0 ? "inicial" : `cuota ${mirror.next.n}`} de «${e.title}»: ${dueLabel(mirror.next.daysLeft)}` : `Te falta pagar tu parte de «${e.title}»`,
+      body: `${fmt(rest, "USD")} (${fmt(Math.round(rest * rate), "VES")} hoy). Te lo recuerda ${user.name} 🙏 Toca para pagar.`,
       url: salidaUrl(salidaId),
     });
   }
@@ -709,7 +834,11 @@ export async function remindPerson(userId: string): Promise<{ ok: true; sent: nu
     const other = ledger.members.find((m) => m.userId === userId);
     const e = ledger.expenses[0];
     if (!other || !e) continue;
-    const rest = remainingTo(eLikeOf(e), linkedOf(ledger, e.id), other.id, ledger.me.id);
+    const owes = remainingTo(eLikeOf(e), linkedOf(ledger, e.id), other.id, ledger.me.id);
+    // Por cuotas de Cashea solo cuenta hasta la próxima cuota, no el total.
+    const plan = casheaPlanOf(ledger);
+    const mirror = plan?.memberId === ledger.me.id ? mirrorForDebtor(plan, eLikeOf(e), linkedOf(ledger, e.id), other.id) : null;
+    const rest = mirror?.next ? Math.min(owes, mirror.nextPayUsd) : owes;
     if (rest > 0) {
       total += rest;
       titles.push(e.title);

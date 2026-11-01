@@ -8,7 +8,7 @@ import { ArrowLeft, ArrowRight, Check, ChevronDown, Minus, Plus, Sparkles, Trash
 import { saveSalida, type SalidaInput } from "@/app/actions/salidas";
 import { ratesForDate } from "@/app/actions/rates";
 import { CATEGORIES, PAY_METHODS, payMethodOf } from "@/lib/constants";
-import { CASHEA_DEFAULT_INTERVAL, CASHEA_LEVELS, CASHEA_LINES, casheaSchedule, inClubDays, levelOf } from "@/lib/cashea";
+import { CASHEA_DEFAULT_INTERVAL, CASHEA_LEVELS, CASHEA_LINES, casheaSchedule, inClubDays, levelOf, mirrorForDebtor } from "@/lib/cashea";
 import { prettyDay, todayVE } from "@/lib/dates";
 import { CURRENCY_META, fmt, fmtNumber, fromUsdCents, parseAmount, toUsdCents, type Currency } from "@/lib/money";
 import { computeSplit, EXTRA_PRESETS, sharesToUsd, SplitError, type Extra, type SplitInput, type SplitItem, type SplitMode } from "@/lib/split";
@@ -39,6 +39,8 @@ export type SalidaInitial = {
   cashea?: { level: number; initialPct: number; installments: number; intervalDays: number; mode: string; store: string | null; line: string } | null;
   /** Estado de cada quien en la cuenta al momento de editar. */
   paid?: Record<string, "pagado" | "parcial" | "falta">;
+  /** Cashea en espejo: las cuotas que ya pagó cada quien. */
+  paidCuotas?: Record<string, number[]>;
 };
 
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -272,10 +274,32 @@ export function SalidaWizard({
       payers: payers.map((p, i) => ({ memberId: p.memberId, amountUsd: payersUsd[i] })),
       shares: Object.entries(usdShares).map(([memberId, amountUsd]) => ({ memberId, amountUsd })),
     };
-    return shareStatuses(e, []).filter((x) => x.owesUsd > 0);
+    // Cashea en espejo: la parte de cada quien en cada cuota, para marcar cuáles ya pagó.
+    const plan =
+      casheaPayer && schedule && casheaMode === "espejo"
+        ? { memberId: casheaPayer.memberId, mode: "espejo", totalUsd: casheaUsd, installments: schedule.rows.length - 1, rows: schedule.rows }
+        : null;
+    return shareStatuses(e, [])
+      .filter((x) => x.owesUsd > 0)
+      .map((x) => ({ ...x, cuotas: mirrorForDebtor(plan, e, [], x.memberId)?.parts.filter((p) => p.usd > 0) ?? null }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [split, totalUsd, JSON.stringify(payers.map((p) => [p.memberId, payersUsd[payers.indexOf(p)]]))]);
-  const stateOf = (id: string) => paidState[id] ?? "falta";
+  }, [split, totalUsd, casheaMode, JSON.stringify(schedule?.rows), JSON.stringify(payers.map((p) => [p.memberId, payersUsd[payers.indexOf(p)], p.method]))]);
+  const [paidCuotas, setPaidCuotas] = useState<Record<string, number[]>>(initial?.paidCuotas ?? {});
+  /** Las cuotas marcadas de esa persona (si ya estaba pagada antes de usar cuotas, todas). */
+  const cuotasOf = (x: { memberId: string; cuotas: { n: number }[] | null }) =>
+    paidCuotas[x.memberId] ?? (initialPaid[x.memberId] === "pagado" ? (x.cuotas ?? []).map((c) => c.n) : []);
+  const stateOf = (id: string) => {
+    const d = debtors.find((x) => x.memberId === id);
+    if (d?.cuotas) {
+      const n = cuotasOf(d).filter((c) => d.cuotas!.some((p) => p.n === c)).length;
+      return n === 0 ? "falta" : n === d.cuotas.length ? "pagado" : "parcial";
+    }
+    return paidState[id] ?? "falta";
+  };
+  const markAll = (paid: boolean) => {
+    setPaidState((p) => ({ ...p, ...Object.fromEntries(debtors.map((x) => [x.memberId, paid ? ("pagado" as const) : ("falta" as const)])) }));
+    setPaidCuotas((p) => ({ ...p, ...Object.fromEntries(debtors.filter((x) => x.cuotas).map((x) => [x.memberId, paid ? x.cuotas!.map((c) => c.n) : []])) }));
+  };
 
   // ── Guardar
   const canSave =
@@ -326,10 +350,11 @@ export function SalidaWizard({
             availableLineUsd: parseAmount(availableLine) ?? null,
           }
         : undefined,
-      paidMembers: debtors.filter((x) => stateOf(x.memberId) === "pagado").map((x) => x.memberId),
+      paidMembers: debtors.filter((x) => !x.cuotas && stateOf(x.memberId) === "pagado").map((x) => x.memberId),
       unpaidMembers: Object.entries(initialPaid)
-        .filter(([id, st]) => st !== "falta" && stateOf(id) === "falta")
+        .filter(([id, st]) => st !== "falta" && stateOf(id) === "falta" && !debtors.find((x) => x.memberId === id)?.cuotas)
         .map(([id]) => id),
+      paidCuotas: Object.fromEntries(debtors.filter((x) => x.cuotas).map((x) => [x.memberId, cuotasOf(x)])),
     };
     start(async () => {
       const r = await saveSalida(payload);
@@ -1001,10 +1026,10 @@ export function SalidaWizard({
                 <b className="text-text">{debtors.filter((x) => stateOf(x.memberId) === "pagado").length}</b> de {debtors.length} ya pagaron
               </span>
               <span className="flex gap-3 font-semibold">
-                <button type="button" className="hover:text-text" onClick={() => setPaidState((p) => ({ ...p, ...Object.fromEntries(debtors.map((x) => [x.memberId, "pagado" as const])) }))}>
+                <button type="button" className="hover:text-text" onClick={() => markAll(true)}>
                   Todos pagaron
                 </button>
-                <button type="button" className="hover:text-text" onClick={() => setPaidState((p) => ({ ...p, ...Object.fromEntries(debtors.map((x) => [x.memberId, "falta" as const])) }))}>
+                <button type="button" className="hover:text-text" onClick={() => markAll(false)}>
                   Nadie
                 </button>
               </span>
@@ -1013,6 +1038,42 @@ export function SalidaWizard({
               {debtors.map((x) => {
                 const m = memberById(x.memberId);
                 const st = stateOf(x.memberId);
+                if (x.cuotas) {
+                  // Por cuotas de Cashea: se marca cuota por cuota, o todas de una.
+                  const mine = cuotasOf(x);
+                  const setMine = (ns: number[]) => setPaidCuotas((p) => ({ ...p, [x.memberId]: ns }));
+                  return (
+                    <div key={x.memberId} className={clsx("rounded-2xl border-2 p-2.5", st === "pagado" ? "border-mint bg-mint-soft" : st === "parcial" ? "border-mango/60 bg-mango/10" : "border-line")}>
+                      <div className="flex items-center gap-3">
+                        <Avatar emoji={m?.avatar ?? "🙂"} color={m?.color ?? "#999"} size={34} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-semibold">{m?.isMe ? "Yo" : m?.name}</span>
+                          <span className="num block text-xs text-muted">debe {fmt(x.owesUsd, "USD")} por cuotas</span>
+                        </span>
+                        <button type="button" onClick={() => setMine(st === "pagado" ? [] : x.cuotas!.map((c) => c.n))} className="text-xs font-semibold text-muted hover:text-text">
+                          {st === "pagado" ? "Ninguna" : "Todas"}
+                        </button>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {x.cuotas.map((c) => {
+                          const on = mine.includes(c.n);
+                          return (
+                            <button
+                              key={c.n}
+                              type="button"
+                              aria-pressed={on}
+                              onClick={() => setMine(on ? mine.filter((n) => n !== c.n) : [...mine, c.n])}
+                              className={clsx("num rounded-lg border-2 px-2 py-1 text-xs font-semibold", on ? "border-mint bg-mint text-on-color" : "border-line text-muted")}
+                            >
+                              {on && "✓ "}
+                              {c.n === 0 ? "Ini" : `C${c.n}`} {fmt(c.usd, "USD")}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                }
                 return (
                   <button
                     key={x.memberId}
@@ -1035,7 +1096,7 @@ export function SalidaWizard({
                 );
               })}
             </div>
-            <p className="mt-2 text-xs text-muted">Toca a cada quien para marcarlo. Después también lo puedes cambiar desde la cuenta, y a los que falten les llega el aviso.</p>
+            <p className="mt-2 text-xs text-muted">Toca a cada quien{debtors.some((x) => x.cuotas) ? " o cada cuota" : ""} para marcarlo. Después también lo puedes cambiar desde la cuenta, y a los que falten les llega el aviso.</p>
           </>
         )}
       </Card>

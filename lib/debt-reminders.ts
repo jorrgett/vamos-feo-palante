@@ -75,7 +75,7 @@ export function dailyReminders(salidas: ReminderSalida[], at?: string): DailyRem
         groupId: x.salidaId,
         emoji: x.overdueCuota != null ? "⚠️" : "💸",
         title: x.overdueCuota != null ? `Se te venció ${cuotaName(x.overdueCuota)} de «${x.title}»` : `Te falta pagar tu parte de «${x.title}»`,
-        body: `${fmt(x.usd, "USD")} (${fmt(x.ves, "VES")}) para ${x.to}. ${x.overdueCuota != null ? "Págala para ponerte al día" : "Toca para pagar"} 🙏${confirmNote}`,
+        body: `${fmt(x.usd, "USD")} (${fmt(x.ves, "VES")} hoy) para ${x.to}. ${x.overdueCuota != null ? "Págala para ponerte al día" : "Toca para pagar"} 🙏${confirmNote}`,
         url: x.creditorUserId ? `/pagar?a=${x.creditorUserId}&s=${x.salidaId}` : `/salidas/${x.salidaId}`,
       });
     } else if (d.length > 1) {

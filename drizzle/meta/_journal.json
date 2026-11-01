@@ -64,6 +64,13 @@
       "when": 1792419435971,
       "tag": "0008_varias_categorias",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793573406124,
+      "tag": "0009_cuota_de_cada_pago",
+      "breakpoints": true
     }
   ]
 }

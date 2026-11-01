@@ -8,6 +8,8 @@ import { toggleInstallment } from "@/app/actions/salidas";
 import { CASHEA_LATE_FEE_USD, installmentStatus, levelOf, planProgress } from "@/lib/cashea";
 import { prettyDay, relativeDue } from "@/lib/dates";
 import { fmt, fmtNumber, parseAmount } from "@/lib/money";
+import type { RateSourceId } from "@/lib/rates-shared";
+import { CuotasSheet, type CuotaPart } from "./cuotas-sheet";
 import { useDisplay, Money } from "./display";
 import { Avatar, Button, Sheet, useToast } from "./ui";
 
@@ -30,7 +32,7 @@ export type CasheaPlanView = {
   mode: string;
   shares: { memberId: string; usd: number }[];
   /** Modo espejo: lo que le toca a cada pana en cada cuota y cuánto le falta (ya descontado lo que pagó). */
-  mirror?: Record<string, { n: number; usd: number; restUsd: number }[]>;
+  mirror?: Record<string, CuotaPart[]>;
   rows: { id: string; n: number; dueDate: string; amountUsd: number; paidAt: string | null; paidVes: number | null; paidRate: number | null }[];
 };
 
@@ -50,6 +52,8 @@ export function CasheaPlanCard({
   groupId,
   meId,
   canMark,
+  canMarkPanas,
+  groupRate,
 }: {
   plan: CasheaPlanView;
   members: MemberLite[];
@@ -57,6 +61,9 @@ export function CasheaPlanCard({
   meId: string;
   /** Quién marca las cuotas como pagadas a Cashea: el dueño (o quien anotó la salida si el dueño no tiene cuenta). */
   canMark?: boolean;
+  /** ¿Puedo marcar qué cuotas ya pagó cada pana? (cobro yo o yo anoté la salida, y sigue abierta). */
+  canMarkPanas?: boolean;
+  groupRate?: RateSourceId;
 }) {
   const { rates } = useDisplay();
   const toast = useToast();
@@ -69,6 +76,7 @@ export function CasheaPlanCard({
   const others = plan.shares.filter((s) => s.memberId !== plan.memberId && s.usd > 0);
   const iAmHolder = plan.memberId === meId;
   const mayMark = canMark ?? iAmHolder;
+  const [panaCuotas, setPanaCuotas] = useState<string | null>(null);
 
   const mark = (rowId: string, paid: boolean, paidVes?: number | null, rate?: number | null) =>
     start(async () => {
@@ -166,10 +174,16 @@ export function CasheaPlanCard({
                   <span className="flex min-w-28 items-center gap-2 font-semibold">
                     <Avatar emoji={m?.avatar ?? "🙂"} color={m?.color ?? "#9CA3AF"} size={18} className="mr-1 align-middle" /> {s.memberId === meId ? "Tú" : m?.name}
                   </span>
+                  {canMarkPanas && plan.mirror?.[s.memberId] && (
+                    <button type="button" onClick={() => setPanaCuotas(s.memberId)} className="order-last ml-auto rounded-full border-2 border-line-strong px-2.5 py-0.5 text-xs font-semibold text-muted hover:border-ink hover:text-text">
+                      Marcar
+                    </button>
+                  )}
                   {plan.rows.map((r) => {
                     const part = plan.mirror?.[s.memberId]?.find((x) => x.n === r.n);
                     // Verde = ese pana ya pagó su parte de esa cuota.
-                    const done = part ? part.restUsd === 0 : !!r.paidAt;
+                    const done = part ? part.restUsd === 0 && part.usd > 0 : !!r.paidAt;
+                    if (part && part.usd === 0) return null;
                     return (
                       <span key={r.id} className={clsx("num rounded-lg px-2 py-0.5 text-xs", done ? "bg-mint-soft text-mint" : "bg-card")}>
                         {r.n === 0 ? "Ini" : `C${r.n}`} <Money usd={part ? part.usd : Math.round(r.amountUsd * frac)} className="text-xs" />
@@ -185,6 +199,17 @@ export function CasheaPlanCard({
             Modo espejo: cada quien paga su parte al ritmo de las cuotas, a tasa BCV del día. Si una cuota se atrasa, Cashea cobra {fmt(CASHEA_LATE_FEE_USD, "USD")} de reactivación.
           </p>
         </div>
+      )}
+
+      {panaCuotas && plan.mirror?.[panaCuotas] && (
+        <CuotasSheet
+          salidaId={groupId}
+          memberId={panaCuotas}
+          name={members.find((m) => m.id === panaCuotas)?.name ?? "este pana"}
+          parts={plan.mirror[panaCuotas].filter((p) => p.usd > 0)}
+          groupRate={groupRate ?? "bcv"}
+          onClose={() => setPanaCuotas(null)}
+        />
       )}
 
       <Sheet open={!!paying} onClose={() => setPaying(null)} title={paying ? `Pagar cuota ${paying.n}` : ""}>

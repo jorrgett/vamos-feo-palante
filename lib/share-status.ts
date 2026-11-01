@@ -8,7 +8,7 @@ export type ExpenseLike = {
   shares: { memberId: string; amountUsd: number }[];
 };
 
-export type LinkedPayment = { fromMember: string; toMember: string; amountUsd: number; confirmedAt?: Date | string | null };
+export type LinkedPayment = { id?: string; fromMember: string; toMember: string; amountUsd: number; confirmedAt?: Date | string | null; cuotaN?: number | null };
 
 export type ShareStatus = {
   memberId: string;

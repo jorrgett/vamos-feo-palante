@@ -16,6 +16,7 @@ import { dueLabel } from "@/lib/cashea";
 import { fmt, fmtNumber } from "@/lib/money";
 import { RATE_META, vesPerUsd, type RateSourceId } from "@/lib/rates-shared";
 import { useDisplay, Money } from "./display";
+import { CuotasSheet, PAID_METHODS, type CuotaPart } from "./cuotas-sheet";
 import { ProofAiLine, ProofButton, type ProofView } from "./proof";
 import { Avatar, Button, Segmented, Sheet, useToast } from "./ui";
 
@@ -42,18 +43,15 @@ export type ChecklistRow = {
   pendingIdsForMe: string[];
   /** Captura del pago por confirmar (con lo que leyó la IA). */
   proof?: ProofView | null;
+  /** ¿Puedo marcar sus pagos? (cobro yo o yo anoté la salida). */
+  canMark?: boolean;
+  /** Cashea en espejo: todas sus cuotas y lo que falta de cada una. */
+  cuotaParts?: CuotaPart[] | null;
   /** Si se paga por cuotas (Cashea en espejo): la próxima cuota de esta persona. */
   cuota?: { n: number; count: number; dueDate: string; daysLeft: number; payUsd: number; overdueUsd: number; holderUserId: string | null } | null;
 };
 
-const METHODS = [
-  { id: "pago_movil", label: "📲 Pago móvil", cur: "VES" },
-  { id: "efectivo_usd", label: "💵 Efectivo $", cur: "USD" },
-  { id: "zelle", label: "⚡ Zelle", cur: "USD" },
-  { id: "binance", label: "🟡 Binance", cur: "USD" },
-  { id: "efectivo_bs", label: "🪙 Efectivo Bs", cur: "VES" },
-  { id: "otro", label: "🔁 Otro", cur: "USD" },
-] as const;
+const METHODS = PAID_METHODS;
 
 export function ShareChecklist({
   salidaId,
@@ -74,6 +72,7 @@ export function ShareChecklist({
   const router = useRouter();
   const [pending, start] = useTransition();
   const [paying, setPaying] = useState<ChecklistRow | null>(null);
+  const [cuotasOf, setCuotasOf] = useState<ChecklistRow | null>(null);
   const [method, setMethod] =
     useState<(typeof METHODS)[number]["id"]>("pago_movil");
   const [cur, setCur] = useState<"USD" | "VES">("VES");
@@ -288,7 +287,16 @@ export function ShareChecklist({
                         </Button>
                       </>
                     )}
-                  {r.status === "pagado" && r.iCollect && !closed && (
+                  {r.status === "pagado" && r.canMark && !closed && r.cuotaParts && (
+                    <button
+                      disabled={pending}
+                      onClick={() => setCuotasOf(r)}
+                      className="flex items-center gap-1 rounded-full px-2.5 py-1.5 text-xs font-semibold text-muted hover:text-text"
+                    >
+                      <Undo2 size={13} /> Cambiar cuotas
+                    </button>
+                  )}
+                  {r.status === "pagado" && r.canMark && !closed && !r.cuotaParts && (
                     <button
                       disabled={pending}
                       onClick={() =>
@@ -333,7 +341,7 @@ export function ShareChecklist({
                           >
                             Pagar mi parte
                           </Link>
-                        ) : r.iCollect ? (
+                        ) : r.canMark ? (
                           <>
                             {r.userId && (
                               <button
@@ -346,13 +354,15 @@ export function ShareChecklist({
                                 <BellRing size={15} />
                               </button>
                             )}
-                            <Button
-                              size="sm"
-                              onClick={() => setPaying(r)}
-                              disabled={pending}
-                            >
-                              Ya me pagó
-                            </Button>
+                            {r.cuotaParts ? (
+                              <Button size="sm" onClick={() => setCuotasOf(r)} disabled={pending}>
+                                Marcar cuotas
+                              </Button>
+                            ) : (
+                              <Button size="sm" onClick={() => setPaying(r)} disabled={pending}>
+                                {r.iCollect ? "Ya me pagó" : "Ya pagó"}
+                              </Button>
+                            )}
                           </>
                         ) : null}
                       </>
@@ -380,7 +390,7 @@ export function ShareChecklist({
       <Sheet
         open={!!paying}
         onClose={() => setPaying(null)}
-        title={paying ? `${paying.name} te pagó su parte` : ""}
+        title={paying ? (paying.iCollect ? `${paying.name} te pagó su parte` : `${paying.name} ya pagó su parte`) : ""}
       >
         {paying && (
           <div className="space-y-4">
@@ -397,7 +407,7 @@ export function ShareChecklist({
               </p>
             </div>
             <div>
-              <p className="label">¿Cómo te pagó?</p>
+              <p className="label">¿Cómo pagó?</p>
               <div className="grid grid-cols-2 gap-2">
                 {METHODS.map((m) => (
                   <button
@@ -453,11 +463,22 @@ export function ShareChecklist({
                 });
               }}
             >
-              <Check size={18} /> Sí, ya me pagó
+              <Check size={18} /> {paying.iCollect ? "Sí, ya me pagó" : "Sí, ya pagó"}
             </Button>
           </div>
         )}
       </Sheet>
+      {cuotasOf?.cuotaParts && (
+        <CuotasSheet
+          key={cuotasOf.memberId}
+          salidaId={salidaId}
+          memberId={cuotasOf.memberId}
+          name={cuotasOf.name}
+          parts={cuotasOf.cuotaParts}
+          groupRate={groupRate}
+          onClose={() => setCuotasOf(null)}
+        />
+      )}
     </section>
   );
 }

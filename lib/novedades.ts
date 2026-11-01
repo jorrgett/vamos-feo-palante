@@ -13,6 +13,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-01.1",
+    date: "2026-11-01",
+    emoji: "✅",
+    title: "Cuotas de Cashea una por una y bolívares al día",
+    items: [
+      { emoji: "🛍️", text: "Quien cobra o quien anotó la salida ya puede marcar qué cuota pagó cada pana: una, varias o todas, en cualquier orden y momento. Si se marcó de más, se desmarca sin perder los datos del pago." },
+      { emoji: "💱", text: "Las salidas anotadas en bolívares ahora muestran lo que se debe hoy. La deuda se mantiene en dólares y se paga al equivalente del día, como hace Cashea." },
+      { emoji: "💸", text: "Al pagar, la app te explica por qué el monto no es el mismo de cuando se anotó." },
+    ],
+  },
+  {
     id: "2026-10-24.1",
     date: "2026-10-24",
     emoji: "🛍️",
