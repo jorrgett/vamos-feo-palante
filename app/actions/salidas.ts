@@ -20,7 +20,7 @@ import { getRates } from "@/lib/rates";
 import { vesPerUsd, type RateSourceId } from "@/lib/rates-shared";
 import { debtSplit, remainingTo, shareStatuses } from "@/lib/share-status";
 import { computeSplit, sharesToUsd, SplitError, type SplitInput } from "@/lib/split";
-import { dueLabel, mirrorForDebtor, reconcileCuotas, type MirrorPlanLike } from "@/lib/cashea";
+import { cuotasLabel, dueLabel, mirrorForDebtor, reconcileCuotas, type MirrorPlanLike } from "@/lib/cashea";
 import { casheaPlanOf } from "@/lib/salida-view";
 
 const cents = z.number().int().min(0).max(1e13);
@@ -620,8 +620,8 @@ const paySchema = z.object({
   reference: z.string().trim().max(40).optional(),
   /** Comprobante ya subido con attachProof (queda pegado al pago). */
   proofId: z.string().uuid().optional(),
-  /** Cuánto paga de cada salida si no es todo (p. ej. una cuota de Cashea). Nunca más de lo que debe. */
-  amounts: z.record(z.string().uuid(), cents.min(1)).optional(),
+  /** Cashea en espejo: las cuotas que paga de cada salida. */
+  cuotas: z.record(z.string().uuid(), z.array(z.number().int().min(0).max(60)).min(1).max(61)).optional(),
 });
 export type PayInput = z.input<typeof paySchema>;
 
@@ -640,35 +640,42 @@ async function buildPayRows(userId: string, d: z.infer<typeof paySchema>, batchI
     if (!ledger || !e) continue;
     const creditor = ledger.members.find((m) => m.userId === d.toUserId);
     if (!creditor) continue;
-    const owes = remainingTo(eLikeOf(e), linkedOf(ledger, e.id), ledger.me.id, creditor.id);
+    const linked = linkedOf(ledger, e.id);
+    const owes = remainingTo(eLikeOf(e), linked, ledger.me.id, creditor.id);
     if (owes <= 0) continue;
-    const rest = Math.min(owes, d.amounts?.[sid] ?? owes);
-    const partial = rest < owes;
+    // Por cuotas de Cashea: un pago por cada cuota elegida, para que quede claro cuál se pagó.
+    const plan = casheaPlanOf(ledger);
+    const mirror = plan?.memberId === creditor.id ? mirrorForDebtor(plan, eLikeOf(e), linked, ledger.me.id) : null;
+    const wanted = d.cuotas?.[sid];
+    const slices: { cuotaN: number | null; usd: number }[] = mirror && wanted ? mirror.parts.filter((p) => wanted.includes(p.n) && p.restUsd > 0).map((p) => ({ cuotaN: p.n, usd: p.restUsd })) : [{ cuotaN: null, usd: owes }];
+    if (slices.length === 0) continue;
     const rate = vesPerUsd(rates, ledger.group.rateSource as RateSourceId);
-    const inEur = Math.round((rest * rates.bcvUsd) / rates.bcvEur);
-    owed.VES += Math.round(rest * rate);
-    owed.USD += rest;
-    owed.EUR += inEur;
-    const amount = d.currency === "VES" ? Math.round(rest * rate) : d.currency === "EUR" ? inEur : rest;
-    titles.push(e.title);
-    rows.push({
-      groupId: sid,
-      expenseId: e.id,
-      batchId,
-      fromMember: ledger.me.id,
-      toMember: creditor.id,
-      currency: d.currency,
-      amount,
-      amountUsd: rest,
-      rate: d.currency === "VES" ? rate : null,
-      rateSource: d.currency === "VES" ? ledger.group.rateSource : null,
-      method: d.method,
-      reference: d.reference || null,
-      note: (partial ? `Abono a su parte de «${e.title}»` : `Su parte de «${e.title}»`).slice(0, 140),
-      paidAt: new Date(),
-      confirmedAt: null,
-      createdBy: userId,
-    });
+    titles.push(mirror && wanted ? `${e.title} (${cuotasLabel(slices.map((x) => x.cuotaN!))})` : e.title);
+    for (const { cuotaN, usd } of slices) {
+      const inEur = Math.round((usd * rates.bcvUsd) / rates.bcvEur);
+      owed.VES += Math.round(usd * rate);
+      owed.USD += usd;
+      owed.EUR += inEur;
+      rows.push({
+        groupId: sid,
+        expenseId: e.id,
+        batchId,
+        cuotaN,
+        fromMember: ledger.me.id,
+        toMember: creditor.id,
+        currency: d.currency,
+        amount: d.currency === "VES" ? Math.round(usd * rate) : d.currency === "EUR" ? inEur : usd,
+        amountUsd: usd,
+        rate: d.currency === "VES" ? rate : null,
+        rateSource: d.currency === "VES" ? ledger.group.rateSource : null,
+        method: d.method,
+        reference: d.reference || null,
+        note: (cuotaN != null ? `Pago de ${cuotasLabel([cuotaN])} de «${e.title}»` : `Su parte de «${e.title}»`).slice(0, 140),
+        paidAt: new Date(),
+        confirmedAt: null,
+        createdBy: userId,
+      });
+    }
   }
   return { rows, titles, owed };
 }

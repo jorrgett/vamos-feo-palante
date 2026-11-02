@@ -263,5 +263,14 @@ export function mirrorForDebtor(plan: MirrorPlanLike | null | undefined, e: Expe
   return { holderId: plan.memberId, count: plan.installments, ...mirrorStatus({ owedUsd, payments, holderPutUsd, planTotalUsd: plan.totalUsd, rows: plan.rows, at }) };
 }
 
+/** «cuota 2», «cuotas 1 y 3» o «inicial y cuota 1». */
+export function cuotasLabel(ns: number[]): string {
+  const sorted = [...ns].sort((a, b) => a - b);
+  const cuotas = sorted.filter((n) => n > 0);
+  const nums = cuotas.length > 1 ? `${cuotas.slice(0, -1).join(", ")} y ${cuotas[cuotas.length - 1]}` : String(cuotas[0] ?? "");
+  const text = cuotas.length === 0 ? "" : cuotas.length === 1 ? `cuota ${nums}` : `cuotas ${nums}`;
+  return sorted[0] === 0 ? (text ? `inicial y ${text}` : "inicial") : text;
+}
+
 /** «la inicial» o «la cuota 2». */
 export const cuotaName = (n: number) => (n === 0 ? "la inicial" : `la cuota ${n}`);

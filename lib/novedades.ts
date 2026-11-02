@@ -13,6 +13,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-01.2",
+    date: "2026-11-01",
+    emoji: "🛍️",
+    title: "Paga varias cuotas de una vez",
+    items: [
+      { emoji: "☑️", text: "Al pagarle a un pana una salida con Cashea eliges las cuotas que quieres pagar: una, varias o todas." },
+      { emoji: "💸", text: "«Todo de una» marca todas tus cuotas y quedas al día." },
+    ],
+  },
+  {
     id: "2026-11-01.1",
     date: "2026-11-01",
     emoji: "✅",

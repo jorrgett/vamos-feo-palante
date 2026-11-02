@@ -1,11 +1,13 @@
 import "server-only";
 import type { Ledger, LedgerSummary } from "./data";
 import { categoryOf } from "./constants";
-import { ymdOf } from "./dates";
+import { diffDays, todayVE, ymdOf } from "./dates";
 import { remainingTo } from "./share-status";
 import { mirrorForDebtor } from "./cashea";
 
 type Bundle = { ledger: Ledger; summary: LedgerSummary };
+
+export type PendingCuota = { n: number; dueDate: string; daysLeft: number; restUsd: number };
 
 export type PersonItem = {
   salidaId: string;
@@ -16,7 +18,7 @@ export type PersonItem = {
   rateSource: string;
   closed: boolean;
   /** Si se paga por cuotas de Cashea (espejo): la próxima cuota y cuánto hay que pagar para ponerse al día. */
-  cuota?: { n: number; count: number; dueDate: string; daysLeft: number; payUsd: number } | null;
+  cuota?: { n: number; count: number; dueDate: string; daysLeft: number; payUsd: number; pending: PendingCuota[] } | null;
   /** Si la salida se anotó en bolívares: la tasa de ese día (se paga al equivalente de hoy). */
   registeredRate?: number | null;
 };
@@ -51,7 +53,10 @@ export function personBalances(bundles: Bundle[]): PersonBalance[] {
       const cuotaOf = (debtor: string, creditor: string) => {
         if (plan?.memberId !== creditor) return null;
         const m = mirrorForDebtor(plan, eLike, linked, debtor);
-        return m?.next ? { n: m.next.n, count: m.count, dueDate: m.next.dueDate, daysLeft: m.next.daysLeft, payUsd: m.nextPayUsd } : null;
+        if (!m?.next) return null;
+        const today = todayVE();
+        const pending = m.parts.filter((x) => x.restUsd > 0).map((x) => ({ n: x.n, dueDate: x.dueDate, daysLeft: diffDays(x.dueDate, today), restUsd: x.restUsd }));
+        return { n: m.next.n, count: m.count, dueDate: m.next.dueDate, daysLeft: m.next.daysLeft, payUsd: m.nextPayUsd, pending };
       };
       const base = {
         salidaId: ledger.group.id,

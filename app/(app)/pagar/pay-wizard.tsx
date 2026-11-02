@@ -11,7 +11,7 @@ import { Money, useDisplay } from "@/components/display";
 import { compressImage } from "@/components/image-tools";
 import { ProofAiLine } from "@/components/proof";
 import { Avatar, Button, EmptyState, useToast } from "@/components/ui";
-import { dueLabel } from "@/lib/cashea";
+import { cuotasLabel, dueLabel } from "@/lib/cashea";
 import { prettyDay } from "@/lib/dates";
 import { fmt, fmtNumber, type Currency } from "@/lib/money";
 import { amountForBank, bankCode, docParts, pagoMovilBlock, phoneForBank } from "@/lib/pago-movil";
@@ -32,7 +32,7 @@ export type Creditor = {
     remainingUsd: number;
     rateSource: string;
     /** Si se paga por cuotas de Cashea: la próxima (por defecto se paga esa). */
-    cuota?: { n: number; count: number; dueDate: string; daysLeft: number; payUsd: number } | null;
+    cuota?: { n: number; count: number; dueDate: string; daysLeft: number; payUsd: number; pending: { n: number; dueDate: string; daysLeft: number; restUsd: number }[] } | null;
     /** Si se anotó en bolívares: la tasa de ese día. */
     registeredRate?: number | null;
   }[];
@@ -64,10 +64,24 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll }: { cred
   const [proof, setProof] = useState<{ id: string; preview: string; ai: ProofAi | null; aiError?: string } | null>(null);
   const [uploading, startUpload] = useTransition();
 
-  // En las salidas por cuotas de Cashea se paga la próxima cuota, salvo que elija pagar todo.
-  const [full, setFull] = useState<Record<string, boolean>>({});
-  const payFull = (i: Creditor["items"][number]) => !i.cuota || (full[i.salidaId] ?? !!payAll);
-  const amountOf = (i: Creditor["items"][number]) => (payFull(i) ? i.remainingUsd : Math.min(i.cuota!.payUsd, i.remainingUsd));
+  // En las salidas por cuotas de Cashea se eligen las cuotas que se pagan: una, varias o todas.
+  type Item = Creditor["items"][number];
+  const [cuotaPicks, setCuotaPicks] = useState<Record<string, number[]>>({});
+  /** Por defecto, lo vencido o, si no hay nada vencido, la próxima cuota. Con «Pagar todo», todas. */
+  const defaultCuotas = (i: Item, all = !!payAll) => {
+    const p = i.cuota!.pending;
+    const late = p.filter((x) => x.daysLeft < 0);
+    return (all ? p : late.length ? late : p.slice(0, 1)).map((x) => x.n);
+  };
+  const cuotasOf = (i: Item) => cuotaPicks[i.salidaId] ?? defaultCuotas(i);
+  const allCuotas = (i: Item) => cuotasOf(i).length === i.cuota!.pending.length;
+  // Siempre queda al menos una marcada; para no pagar esa salida se desmarca la salida.
+  const toggleCuota = (i: Item, n: number) => {
+    const cur = cuotasOf(i);
+    if (cur.includes(n) && cur.length === 1) return;
+    setCuotaPicks((x) => ({ ...x, [i.salidaId]: cur.includes(n) ? cur.filter((y) => y !== n) : [...cur, n] }));
+  };
+  const amountOf = (i: Item) => (i.cuota ? i.cuota.pending.filter((p) => cuotasOf(i).includes(p.n)).reduce((a, p) => a + p.restUsd, 0) : i.remainingUsd);
   const selected = c?.items.filter((i) => picked.includes(i.salidaId)) ?? [];
   const usd = selected.reduce((a, i) => a + amountOf(i), 0);
   const ves = selected.reduce((a, i) => a + Math.round(amountOf(i) * vesPerUsd(rates, i.rateSource as RateSourceId)), 0);
@@ -76,8 +90,8 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll }: { cred
     .filter((i) => i.registeredRate)
     .map((i) => ({ title: i.title, then: Math.round(amountOf(i) * i.registeredRate!), now: Math.round(amountOf(i) * vesPerUsd(rates, i.rateSource as RateSourceId)) }))
     .filter((x) => Math.abs(x.now - x.then) > 100);
-  /** Solo las salidas donde paga menos que el total (una cuota). */
-  const amounts = Object.fromEntries(selected.filter((i) => amountOf(i) < i.remainingUsd).map((i) => [i.salidaId, amountOf(i)]));
+  /** Las cuotas que se pagan de cada salida por cuotas. */
+  const cuotas = Object.fromEntries(selected.filter((i) => i.cuota).map((i) => [i.salidaId, cuotasOf(i)]));
   const rateLabel = [...new Set(selected.map((i) => RATE_META[i.rateSource as RateSourceId]?.short ?? "BCV $"))].join(" / ");
 
   const pm = c?.payInfo.pagoMovil ?? {};
@@ -101,7 +115,7 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll }: { cred
         const blob = await compressImage(file, 1600, 0.85);
         const fd = new FormData();
         fd.append("foto", blob, "comprobante.jpg");
-        fd.append("pago", JSON.stringify({ toUserId: c.userId, salidaIds: picked, method: chosen.id, currency: chosen.currency, amounts }));
+        fd.append("pago", JSON.stringify({ toUserId: c.userId, salidaIds: picked, method: chosen.id, currency: chosen.currency, cuotas }));
         const r = await attachProof(fd);
         if (!r.ok) return toast(r.error, "error");
         if (proof) URL.revokeObjectURL(proof.preview);
@@ -208,23 +222,44 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll }: { cred
                     </span>
                     <Money usd={on ? amountOf(i) : i.remainingUsd} className="font-bold" />
                   </button>
-                  {on && i.cuota && (
-                    <div className="mt-1.5 grid grid-cols-2 gap-1.5 pl-9">
-                      {[false, true].map((all) => (
-                        <button
-                          key={String(all)}
-                          type="button"
-                          onClick={() => setFull((f) => ({ ...f, [i.salidaId]: all }))}
-                          className={clsx(
-                            "rounded-xl border-2 px-2.5 py-1.5 text-left text-xs font-semibold",
-                            payFull(i) === all ? "border-ink bg-sun text-sun-ink" : "border-line text-muted",
-                          )}
-                        >
-                          {all ? "Todo de una" : i.cuota!.n === 0 ? "La inicial" : `Cuota ${i.cuota!.n}/${i.cuota!.count}`}
-                          <span className="num block text-sm">{fmt(all ? i.remainingUsd : Math.min(i.cuota!.payUsd, i.remainingUsd), "USD")}</span>
-                          <span className="block font-normal opacity-75">{all ? "y quedas al día" : dueLabel(i.cuota!.daysLeft)}</span>
-                        </button>
-                      ))}
+                  {on && i.cuota?.pending.length === 1 && (
+                    <p className="mt-1.5 pl-9 text-xs text-muted">
+                      {i.cuota.n === 0 ? "La inicial" : `Cuota ${i.cuota.n}/${i.cuota.count}`} · {dueLabel(i.cuota.pending[0].daysLeft)}
+                    </p>
+                  )}
+                  {on && i.cuota && i.cuota.pending.length > 1 && (
+                    <div className="mt-1.5 space-y-1.5 pl-9">
+                      {i.cuota.pending.map((p) => {
+                        const sel = cuotasOf(i).includes(p.n);
+                        return (
+                          <button
+                            key={p.n}
+                            type="button"
+                            aria-pressed={sel}
+                            onClick={() => toggleCuota(i, p.n)}
+                            className={clsx("flex w-full items-center gap-2.5 rounded-xl border-2 px-2.5 py-2 text-left text-xs font-semibold", sel ? "border-mint bg-mint-soft text-text" : "border-line text-muted")}
+                          >
+                            <span className={clsx("grid size-5 shrink-0 place-items-center rounded-md border-2", sel ? "border-mint bg-mint text-on-color" : "border-line-strong")}>{sel && <Check size={12} strokeWidth={3} />}</span>
+                            <span className="min-w-0 flex-1">
+                              {p.n === 0 ? "Inicial" : `Cuota ${p.n}/${i.cuota!.count}`}
+                              <span className={clsx("block font-normal", p.daysLeft < 0 ? "text-rose" : "opacity-75")}>{dueLabel(p.daysLeft)}</span>
+                            </span>
+                            <span className="num shrink-0 text-sm">{fmt(p.restUsd, "USD")}</span>
+                          </button>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        aria-pressed={allCuotas(i)}
+                        onClick={() => setCuotaPicks((x) => ({ ...x, [i.salidaId]: allCuotas(i) ? defaultCuotas(i, false) : i.cuota!.pending.map((p) => p.n) }))}
+                        className={clsx("flex w-full items-center gap-2.5 rounded-xl border-2 px-2.5 py-2 text-left text-xs font-semibold", allCuotas(i) ? "border-ink bg-sun text-sun-ink" : "border-line text-muted")}
+                      >
+                        <span className="min-w-0 flex-1">
+                          Todo de una
+                          <span className="block font-normal opacity-75">y quedas al día</span>
+                        </span>
+                        <span className="num shrink-0 text-sm">{fmt(i.remainingUsd, "USD")}</span>
+                      </button>
                     </div>
                   )}
                 </li>
@@ -375,7 +410,7 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll }: { cred
           <div className="rounded-2xl bg-card-2 p-4 text-sm">
             <p className="num text-2xl font-bold">{fmt(amountIn(chosen.currency), chosen.currency)}</p>
             <p className="text-muted">
-              {chosen.label} · {selected.map((i) => i.title).join(", ")}
+              {chosen.label} · {selected.map((i) => (i.cuota ? `${i.title} (${cuotasLabel(cuotasOf(i))})` : i.title)).join(", ")}
             </p>
           </div>
           <div className="rounded-2xl border-2 border-dashed border-line-strong p-3">
@@ -422,7 +457,7 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll }: { cred
             loading={pending}
             onClick={() =>
               start(async () => {
-                const r = await payDebts({ toUserId: c.userId, salidaIds: picked, method: chosen.id, currency: chosen.currency, reference: reference || undefined, proofId: proof?.id, amounts });
+                const r = await payDebts({ toUserId: c.userId, salidaIds: picked, method: chosen.id, currency: chosen.currency, reference: reference || undefined, proofId: proof?.id, cuotas });
                 if (r.ok) setDone({ amount: r.amount, currency: chosen.currency, name: c.name });
                 else toast(r.error, "error");
               })

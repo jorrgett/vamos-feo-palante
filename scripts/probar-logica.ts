@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { allocate, fmt, parseAmount, toUsdCents } from "../lib/money";
 import { computeSplit } from "../lib/split";
 import { computeBalances, pairwiseDebts, simplifyDebts } from "../lib/balances";
-import { casheaSchedule, inClubDays, installmentStatus, mirrorForDebtor, mirrorStatus, reconcileCuotas } from "../lib/cashea";
+import { casheaSchedule, cuotasLabel, inClubDays, installmentStatus, mirrorForDebtor, mirrorStatus, reconcileCuotas } from "../lib/cashea";
 import { debtSplit, paidProgress, remainingTo, shareStatuses } from "../lib/share-status";
 import { auditLedger } from "../lib/audit";
 import { categoriesOf, categoryLabel } from "../lib/constants";
@@ -389,6 +389,24 @@ t("cuotas: marcar y desmarcar, también sobre un pago viejo del total", () => {
   const half = [{ id: "x", amountUsd: 50 }];
   assert.deepEqual(reconcileCuotas({ parts, payments: half, wanted: [] }).deleteIds, []);
   assert.deepEqual(reconcileCuotas({ parts, payments: half, wanted: [1] }).add, [{ cuotaN: 1, usd: 50 }]);
+});
+
+t("cuotas: pagar varias de una deja cada una pagada y sigue con la próxima", () => {
+  const rows = [1, 2, 3].map((n) => ({ n, dueDate: `2026-11-0${n}`, amountUsd: 100 }));
+  const base = { owedUsd: 300, holderPutUsd: 300, planTotalUsd: 300, rows, at: "2026-10-30" };
+  const pays = [1, 3].map((n) => ({ id: `p${n}`, amountUsd: 100, cuotaN: n }));
+  const s = mirrorStatus({ ...base, payments: pays });
+  assert.deepEqual(s.parts.map((p) => p.restUsd), [0, 100, 0]);
+  assert.equal(s.next!.n, 2);
+  assert.equal(s.totalRestUsd, 100);
+  const all = mirrorStatus({ ...base, payments: [1, 2, 3].map((n) => ({ id: `p${n}`, amountUsd: 100, cuotaN: n })) });
+  assert.equal(all.next, null);
+  assert.equal(all.totalRestUsd, 0);
+  assert.equal(cuotasLabel([2]), "cuota 2");
+  assert.equal(cuotasLabel([3, 1]), "cuotas 1 y 3");
+  assert.equal(cuotasLabel([1, 2, 3]), "cuotas 1, 2 y 3");
+  assert.equal(cuotasLabel([0, 1]), "inicial y cuota 1");
+  assert.equal(cuotasLabel([0]), "inicial");
 });
 
 console.log(`\n${n} pruebas OK`);
