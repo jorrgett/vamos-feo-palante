@@ -36,7 +36,7 @@ export function Onboarding({ user, inviteCode, alone }: { user: { name: string; 
   return (
     <div className="mx-auto max-w-xl space-y-5 pb-10">
       <div className="flex items-center gap-3">
-        <BrandMark size={48} className="-rotate-6" />
+        <BrandMark size={48} className="-rotate-6" vivo />
         <div>
           <h1 className="display text-2xl font-extrabold">¡Bienvenido, {user.name}! 🤙</h1>
           <p className="text-sm text-muted">Te dejo todo listo en 1 minuto.</p>
@@ -168,7 +168,7 @@ export function Onboarding({ user, inviteCode, alone }: { user: { name: string; 
 
         {step === 4 && (
           <div className="sticker bg-sun p-6 text-center text-sun-ink">
-            <BrandMark size={72} bg={false} className="mx-auto" />
+            <BrandMark size={72} bg={false} className="mx-auto" vivo />
             <p className="display mt-2 text-2xl font-extrabold">¡Listo, ya estás adentro!</p>
             <p className="mt-2 text-sm opacity-80">Cuando salgan, el que ponga la plata anota la salida y a cada quien le llega lo que le toca. Vamos feo pa&apos;lante 🤙</p>
             <div className="mt-5 grid gap-2">

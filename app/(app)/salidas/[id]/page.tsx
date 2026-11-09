@@ -64,7 +64,7 @@ export default async function SalidaPage({ params }: { params: Promise<{ id: str
   const people = ledger.members.filter((m) => !m.leftAt || e.shares.some((s) => s.memberId === m.id));
 
   return (
-    <div className="mx-auto max-w-2xl space-y-5">
+    <div className="entra mx-auto max-w-2xl space-y-5">
       <Link href="/salidas" className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted hover:text-text">
         <ArrowLeft size={16} /> Salidas
       </Link>

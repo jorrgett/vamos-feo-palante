@@ -53,7 +53,7 @@ export function HistoryView({ items, groups }: { items: Item[]; groups: { id: st
   };
 
   return (
-    <div className="space-y-6">
+    <div className="entra space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="display text-3xl font-extrabold sm:text-4xl">Historial</h1>

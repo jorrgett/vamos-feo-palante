@@ -29,6 +29,7 @@ import {
   type PilasCtx,
 } from "./datos";
 import type { PersonaVista, Tarjeta } from "./tipos";
+import { visualBalance, visualCuotas, visualGastos, visualSalida, visualTasas } from "./visuales";
 
 const CAT_IDS = CATEGORIES.map((c) => c.id) as [string, ...string[]];
 const METODOS = PAY_METHODS.map((m) => m.id) as [string, ...string[]];
@@ -45,6 +46,34 @@ const pana = str("Ref del pana (p:xxxxxxxx) o su nombre. «yo» es quien escribe
 const salida = str("Ref de la salida (s:xxxxxxxx) o su nombre.");
 
 export const HERRAMIENTAS: Anthropic.Beta.BetaTool[] = [
+  // ── Tarjetas visuales: muestran las cifras con gráficos; tu texto solo acompaña ──
+  {
+    name: "mostrar_balance",
+    description:
+      "Tarjeta visual con el balance de quien escribe: cuánto le deben, cuánto debe y una barra por pana (al tocar a un pana se ve de qué salidas viene, con botones para pagar o recordar). Úsala cuando pregunten cómo están sus cuentas, a quién le debe o quién le debe.",
+    input_schema: S({}),
+  },
+  {
+    name: "mostrar_salida",
+    description:
+      "Tarjeta visual de una salida: anillo con cuánto se ha pagado y cada pana con su estado. También te devuelve todo el detalle para explicarla. Úsala cuando pregunten por una salida.",
+    input_schema: S({ salida }, ["salida"]),
+  },
+  {
+    name: "mostrar_gastos",
+    description: "Tarjeta visual de gastos: columnas de los últimos 6 meses y barras por tipo de salida del período. Úsala para preguntas de cuánto ha gastado. Sin fechas: el mes en curso.",
+    input_schema: S({ desde: str("AAAA-MM-DD"), hasta: str("AAAA-MM-DD") }),
+  },
+  {
+    name: "mostrar_cuotas",
+    description: "Tarjeta visual con la línea de tiempo de las próximas cuotas de Cashea (las suyas y su parte de las de los panas).",
+    input_schema: S({}),
+  },
+  {
+    name: "mostrar_tasas",
+    description: "Tarjeta visual con las tasas de hoy (dólar BCV, euro BCV, Binance), su curva de 30 días y un convertidor en vivo. Úsala para preguntas de tasas o de cuánto es algo en bolívares.",
+    input_schema: S({}),
+  },
   {
     name: "mis_cuentas",
     description:
@@ -195,6 +224,11 @@ export const HERRAMIENTAS: Anthropic.Beta.BetaTool[] = [
 
 /** Lo que se ve en el chat mientras corre cada herramienta. */
 export const ETIQUETAS: Record<string, string> = {
+  mostrar_balance: "Dibujando tu balance",
+  mostrar_salida: "Dibujando la salida",
+  mostrar_gastos: "Graficando tus gastos",
+  mostrar_cuotas: "Ordenando tus cuotas",
+  mostrar_tasas: "Trayendo las tasas",
   mis_cuentas: "Revisando tus cuentas",
   ver_salida: "Abriendo la salida",
   buscar_salidas: "Buscando en tus salidas",
@@ -221,6 +255,18 @@ export async function ejecutar(name: string, raw: unknown, ctx: PilasCtx): Promi
     switch (name) {
       case "mis_cuentas":
         return { texto: resumen(ctx) };
+      case "mostrar_balance":
+        return visualBalance(ctx);
+      case "mostrar_salida":
+        return visualSalida(ctx, z.object({ salida: z.string().min(1) }).parse(raw).salida);
+      case "mostrar_gastos": {
+        const i = z.object({ desde: fechaZ.optional(), hasta: fechaZ.optional() }).parse(raw);
+        return visualGastos(ctx, i.desde ?? primeroDeMes(), i.hasta ?? todayVE());
+      }
+      case "mostrar_cuotas":
+        return visualCuotas(ctx);
+      case "mostrar_tasas":
+        return await visualTasas(ctx);
       case "ver_salida": {
         const i = z.object({ salida: z.string().min(1) }).parse(raw);
         return { texto: detalleSalida(ctx, buscarSalida(ctx, i.salida)) };

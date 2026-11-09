@@ -57,7 +57,7 @@ export function ProfileView({ user, deletion, admin }: { user: CurrentUser; dele
   };
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className="entra mx-auto max-w-2xl space-y-6">
       <div className="flex items-center gap-4">
         <Avatar emoji={avatar} color={color} size={72} />
         <div>

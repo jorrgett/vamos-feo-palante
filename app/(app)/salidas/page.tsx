@@ -54,7 +54,7 @@ export default async function Salidas() {
     .sort((a, b) => b.date.localeCompare(a.date));
 
   return (
-    <div className="space-y-6">
+    <div className="entra space-y-6">
       <div>
         <div className="flex items-center justify-between gap-3">
           <h1 className="display text-3xl font-extrabold sm:text-4xl">Salidas 🎉</h1>

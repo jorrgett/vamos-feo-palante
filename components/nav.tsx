@@ -86,7 +86,7 @@ function NoticeBell({ unread }: { unread: number }) {
       )}
     >
       <motion.span animate={n ? { rotate: [0, -16, 14, -8, 0] } : {}} transition={{ duration: 0.8, repeat: n ? Infinity : 0, repeatDelay: 4 }}>
-        <Bell size={18} />
+        <Bell size={18} className={n > 0 ? "campana" : undefined} />
       </motion.span>
       {n > 0 && (
         <span className="num absolute -top-1.5 -right-1.5 grid h-5 min-w-5 place-items-center rounded-full border-2 border-bg bg-mango px-1 text-[10px] font-bold text-on-color">
@@ -168,7 +168,7 @@ function PilasButton() {
   if (path.startsWith("/pilas") || path.startsWith("/bienvenida")) return null;
   return (
     <Link href="/pilas" aria-label="Pregúntale a Pilas" title="Pregúntale a Pilas" className="flex h-10 items-center gap-1.5 rounded-full px-1.5 hover:bg-card-2 sm:pr-3">
-      <PilasMascota size={30} />
+      <PilasMascota size={30} vivo cadaSeg={[12, 28]} />
       <span className="hidden text-sm font-bold sm:inline">Pilas</span>
     </Link>
   );

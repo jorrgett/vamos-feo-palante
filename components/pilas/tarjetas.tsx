@@ -9,24 +9,42 @@ import { payMethodOf } from "@/lib/constants";
 import type { EstadoTarjeta, PersonaVista, Tarjeta } from "@/lib/pilas/tipos";
 import { Money } from "@/components/display";
 import { Avatar, Button, useToast } from "@/components/ui";
+import { Confeti } from "@/components/confeti";
+import { VisualBalance, VisualCuotas, VisualGastos, VisualSalida, VisualTasas } from "./visuales";
 
 type Hecho = (estado: EstadoTarjeta, nota: string) => void;
 
 /** Una tarjeta de Pilas: nada pasa hasta que la persona toca el botón (y ahí se usa la misma acción de la app). */
 export function TarjetaPilas({ tarjeta, estado, onHecho }: { tarjeta: Tarjeta; estado?: EstadoTarjeta; onHecho: Hecho }) {
+  if (tarjeta.tipo === "balance") return <VisualBalance t={tarjeta} />;
+  if (tarjeta.tipo === "salida_vista") return <VisualSalida t={tarjeta} />;
+  if (tarjeta.tipo === "gastos") return <VisualGastos t={tarjeta} />;
+  if (tarjeta.tipo === "cuotas") return <VisualCuotas t={tarjeta} />;
+  if (tarjeta.tipo === "tasas") return <VisualTasas t={tarjeta} />;
   if (tarjeta.tipo === "ir")
     return (
       <Link href={tarjeta.href} className="btn-pop btn-pop-paper w-fit px-4 py-2.5 text-sm">
         <span aria-hidden>{tarjeta.emoji}</span> {tarjeta.texto} <ArrowRight size={16} />
       </Link>
     );
+  return <Accion tarjeta={tarjeta} estado={estado} onHecho={onHecho} />;
+}
+
+/** Tarjeta con botón: cuando sale bien, celebra con papelitos. */
+function Accion({ tarjeta, estado, onHecho }: { tarjeta: Tarjeta; estado?: EstadoTarjeta; onHecho: Hecho }) {
+  const [fiesta, setFiesta] = useState(false);
+  const listo: Hecho = (e, nota) => {
+    if (e.estado === "hecho") setFiesta(true);
+    onHecho(e, nota);
+  };
   return (
-    <div className="sticker w-full max-w-md bg-card p-4">
-      {tarjeta.tipo === "salida" && <Salida t={tarjeta} estado={estado} onHecho={onHecho} />}
-      {tarjeta.tipo === "recordar" && <Recordar t={tarjeta} estado={estado} onHecho={onHecho} />}
-      {tarjeta.tipo === "mensaje" && <Mensaje t={tarjeta} estado={estado} onHecho={onHecho} />}
-      {tarjeta.tipo === "pagado" && <Pagado t={tarjeta} estado={estado} onHecho={onHecho} />}
-      {tarjeta.tipo === "confirmar" && <Confirmar t={tarjeta} estado={estado} onHecho={onHecho} />}
+    <div className="sticker relative w-full max-w-md bg-card p-4">
+      {fiesta && <Confeti />}
+      {tarjeta.tipo === "salida" && <Salida t={tarjeta} estado={estado} onHecho={listo} />}
+      {tarjeta.tipo === "recordar" && <Recordar t={tarjeta} estado={estado} onHecho={listo} />}
+      {tarjeta.tipo === "mensaje" && <Mensaje t={tarjeta} estado={estado} onHecho={listo} />}
+      {tarjeta.tipo === "pagado" && <Pagado t={tarjeta} estado={estado} onHecho={listo} />}
+      {tarjeta.tipo === "confirmar" && <Confirmar t={tarjeta} estado={estado} onHecho={listo} />}
     </div>
   );
 }

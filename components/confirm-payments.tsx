@@ -1,13 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { Check, X } from "lucide-react";
 import { answerPayment } from "@/app/actions/salidas";
 import { payMethodOf } from "@/lib/constants";
 import { fmt, type Currency } from "@/lib/money";
 import { ProofAiLine, ProofButton, type ProofView } from "./proof";
 import { Avatar, Button, useToast } from "./ui";
+import { Confeti } from "./confeti";
 
 export type ConfirmView = {
   batchId: string;
@@ -31,10 +32,12 @@ export function ConfirmPayments({ items, role }: { items: ConfirmView[]; role: "
   const toast = useToast();
   const router = useRouter();
   const [pending, start] = useTransition();
+  const [fiesta, setFiesta] = useState<string | null>(null);
   return (
-    <ul className="space-y-2.5">
+    <ul className="entra-lista space-y-2.5">
       {items.map((c) => (
-        <li key={c.batchId} className="sticker bg-card p-4">
+        <li key={c.batchId} className="sticker relative bg-card p-4">
+          {fiesta === c.batchId && <Confeti />}
           <div className="flex items-center gap-3">
             <Avatar emoji={c.fromAvatar} color={c.fromColor} size={42} />
             <div className="min-w-0 flex-1">
@@ -76,7 +79,11 @@ export function ConfirmPayments({ items, role }: { items: ConfirmView[]; role: "
                   start(async () => {
                     const r = await answerPayment(c.settlementIds, true);
                     toast(r.ok ? "¡Confirmado! ✅" : r.error, r.ok ? "ok" : "error");
-                    router.refresh();
+                    // Primero la celebración y después se actualiza la lista.
+                    if (r.ok) {
+                      setFiesta(c.batchId);
+                      setTimeout(() => router.refresh(), 1100);
+                    } else router.refresh();
                   })
                 }
               >

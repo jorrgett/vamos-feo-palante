@@ -15,7 +15,7 @@ export default async function Portada({ searchParams }: { searchParams: Promise<
     <main className="paper grid min-h-dvh place-items-center px-5 py-10">
       <div className="w-full max-w-sm text-center">
         <div className="relative mx-auto w-fit">
-          <BrandMark size={128} className="wobble" />
+          <BrandMark size={128} className="wobble" vivo priority />
           <Doodle kind="star" className="absolute -top-3 -right-9 size-9 rotate-12 text-mango" />
           <Doodle kind="squiggle" className="absolute -bottom-2 -left-12 size-12 text-faint" />
         </div>

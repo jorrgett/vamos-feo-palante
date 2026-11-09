@@ -50,7 +50,7 @@ export function NoticesView({ items }: { items: Item[] }) {
   for (const i of visible) days.set(i.day, [...(days.get(i.day) ?? []), i]);
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className="entra mx-auto max-w-2xl space-y-6">
       <div>
         <h1 className="display text-3xl font-extrabold sm:text-4xl">Avisos 🔔</h1>
         <p className="mt-1 text-muted">Lo que ha pasado en tus salidas: cuentas nuevas, pagos por confirmar y recordatorios.</p>

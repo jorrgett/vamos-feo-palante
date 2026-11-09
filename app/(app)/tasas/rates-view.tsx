@@ -37,7 +37,7 @@ export function RatesView({ history, days }: { history: Row[]; days: number }) {
   const recent = [...filled].reverse().slice(0, 10);
 
   return (
-    <div className="space-y-8">
+    <div className="entra space-y-8">
       <div>
         <h1 className="display text-3xl font-extrabold sm:text-4xl">Tasas del día</h1>
         <p className="mt-1 text-muted">

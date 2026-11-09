@@ -31,7 +31,7 @@ export default async function Pana({ params }: { params: Promise<{ id: string }>
   const shared = bundles.filter(({ ledger }) => ledger.members.some((m) => m.userId === id)).length;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-5">
+    <div className="entra mx-auto max-w-2xl space-y-5">
       <Link href="/panas" className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted hover:text-text">
         <ArrowLeft size={16} /> Panas
       </Link>

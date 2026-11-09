@@ -78,7 +78,7 @@ export default async function Inicio() {
   const pilas = aiEnabled() ? await sugerenciasPilas(user.id) : null;
 
   return (
-    <div className="space-y-8">
+    <div className="entra space-y-8">
       <div>
         <p className="text-sm text-muted first-letter:uppercase">
           {new Intl.DateTimeFormat("es-VE", { weekday: "long", day: "numeric", month: "long", timeZone: "America/Caracas" }).format(new Date())}

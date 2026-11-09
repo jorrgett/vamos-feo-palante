@@ -326,7 +326,7 @@ export function PilasChat({
   return (
     <div className="mx-auto w-full max-w-2xl">
       <div className="mb-5 flex items-center gap-3">
-        <PilasMascota size={44} estado={ocupado ? "pensando" : feliz ? "feliz" : "normal"} />
+        <PilasMascota size={44} vivo estado={ocupado ? "pensando" : feliz ? "feliz" : "normal"} />
         <div className="min-w-0 flex-1">
           <h1 className="display text-2xl leading-none font-extrabold">Pilas</h1>
           <p className="mt-1 text-xs text-muted">Tu pana más pilas con las cuentas · con IA</p>
@@ -341,7 +341,7 @@ export function PilasChat({
       {vacio && (
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="pt-4 text-center">
           <div className="wobble mx-auto w-fit">
-            <PilasMascota size={132} />
+            <PilasMascota size={132} vivo cadaSeg={[5, 9]} />
           </div>
           <h2 className="display mt-5 text-2xl font-extrabold">¡Épale, {nombre}! Soy Pilas</h2>
           <p className="mx-auto mt-2 max-w-sm text-muted">

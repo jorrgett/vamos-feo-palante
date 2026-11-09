@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   formatDetection: { telephone: false },
   // PNG opaco de 180 px que el iPhone usa al "Agregar a inicio" (scripts/generar-iconos.mts). Va incrustado
   // (data:) porque iOS 27.2 no lo descarga de la red y pone una letra; /apple-touch-icon.png sigue existiendo.
-  icons: { apple: [{ url: APPLE_ICON_DATA_URI, sizes: "180x180", type: "image/png" }] },
+  icons: { icon: [{ url: "/icon.png", sizes: "256x256", type: "image/png" }], apple: [{ url: APPLE_ICON_DATA_URI, sizes: "180x180", type: "image/png" }] },
   // iOS todavía lee la versión con prefijo para abrirla como app.
   other: { "apple-mobile-web-app-capable": "yes" },
 };

@@ -52,7 +52,7 @@ export default async function CasheaPage() {
   const myPartOthers = dues.filter((d) => !d.iAmHolder).reduce((a, d) => a + d.myPartUsd, 0);
 
   return (
-    <div className="space-y-8">
+    <div className="entra space-y-8">
       <div className="relative overflow-clip rounded-[1.75rem] bg-cashea p-6 text-cashea-ink sm:p-8">
         <div className="absolute inset-y-0 right-0 w-2/3 opacity-10" style={{ background: "repeating-linear-gradient(135deg, #000 0 3px, transparent 3px 16px)" }} />
         <p className="relative text-xs font-black tracking-[0.2em] uppercase opacity-70">Cashea entre panas</p>

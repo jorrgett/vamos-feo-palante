@@ -17,7 +17,7 @@ export default async function Panas() {
   const others = panas.filter((p) => !p.isMe);
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
+    <div className="entra grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
       <div className="space-y-4">
         <div>
           <h1 className="display text-3xl font-extrabold sm:text-4xl">Los panas 🤙</h1>

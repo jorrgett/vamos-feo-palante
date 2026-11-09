@@ -409,7 +409,7 @@ input[type="number"]::-webkit-outer-spin-button {
   padding-bottom: max(calc(env(safe-area-inset-bottom) + 1rem), 2rem);
 }
 
-/* ── Pilas 🔋: la mascota se carga mientras piensa ─────────────────────── */
+/* ── Pilas 🔋: la mascota se carga mientras piensa, saluda y brinca ───── */
 @keyframes pilas-ola {
   to {
     transform: translateX(-32px);
@@ -445,11 +445,91 @@ input[type="number"]::-webkit-outer-spin-button {
     transform: translateY(0) rotate(0deg);
   }
   30% {
-    transform: translateY(-5px) rotate(-4deg);
+    transform: translateY(-6px) rotate(-4deg);
   }
   60% {
     transform: translateY(0) rotate(3deg);
   }
+  80% {
+    transform: translateY(-2px) rotate(0deg);
+  }
+}
+@keyframes pilas-saludo {
+  0%,
+  100% {
+    transform: rotate(-28deg);
+  }
+  16% {
+    transform: rotate(-158deg);
+  }
+  30% {
+    transform: rotate(-122deg);
+  }
+  44% {
+    transform: rotate(-160deg);
+  }
+  58% {
+    transform: rotate(-122deg);
+  }
+  72% {
+    transform: rotate(-156deg);
+  }
+  88% {
+    transform: rotate(-40deg);
+  }
+}
+@keyframes pilas-saludo-i {
+  0%,
+  100% {
+    transform: rotate(28deg);
+  }
+  20%,
+  80% {
+    transform: rotate(150deg);
+  }
+  40% {
+    transform: rotate(124deg);
+  }
+  60% {
+    transform: rotate(156deg);
+  }
+}
+@keyframes pilas-ladeo {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  20%,
+  70% {
+    transform: rotate(-5deg);
+  }
+}
+@keyframes pilas-guino {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  25%,
+  65% {
+    transform: scaleY(0.1);
+  }
+}
+@keyframes pilas-mira {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25%,
+  40% {
+    transform: translateX(-3.5px);
+  }
+  60%,
+  80% {
+    transform: translateX(3.5px);
+  }
+}
+.pilas-mascota * {
+  transform-box: view-box;
 }
 .pilas-ola {
   animation: pilas-ola 2.6s linear infinite;
@@ -462,6 +542,22 @@ input[type="number"]::-webkit-outer-spin-button {
 .pilas-mirada {
   transition: transform 0.3s;
 }
+.pilas-cuerpo-todo {
+  transform-origin: 37px 86px;
+}
+.pilas-brazo-d,
+.pilas-brazo-i {
+  transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.pilas-brazo-d {
+  transform-origin: 60px 52px;
+  transform: rotate(-28deg);
+}
+.pilas-brazo-i {
+  transform-origin: 14px 52px;
+  transform: rotate(28deg);
+}
+/* Pensando: se carga y se lleva la mano a la barbilla. */
 .pilas-pensando .pilas-nivel {
   animation: pilas-carga 1.8s ease-in-out infinite;
 }
@@ -474,6 +570,251 @@ input[type="number"]::-webkit-outer-spin-button {
 .pilas-pensando .pilas-mirada {
   transform: translate(2px, -2px);
 }
-.pilas-feliz {
+.pilas-pensando .pilas-brazo-d {
+  transform: rotate(-100deg);
+}
+/* Feliz: brinca con los dos brazos arriba. */
+.pilas-feliz .pilas-cuerpo-todo {
   animation: pilas-brinco 0.9s ease-in-out 2;
+}
+.pilas-feliz .pilas-brazo-d {
+  animation: pilas-saludo 1.8s ease-in-out;
+}
+.pilas-feliz .pilas-brazo-i {
+  animation: pilas-saludo-i 1.8s ease-in-out;
+}
+/* Gestos de vez en cuando */
+.pilas-g-saluda .pilas-brazo-d {
+  animation: pilas-saludo 1.8s ease-in-out;
+}
+.pilas-g-saluda .pilas-cuerpo-todo {
+  animation: pilas-ladeo 1.8s ease-in-out;
+}
+.pilas-g-guino .pilas-ojo-d {
+  animation: pilas-guino 0.7s ease-in-out;
+}
+.pilas-g-mira .pilas-mirada {
+  animation: pilas-mira 1.6s ease-in-out;
+}
+.pilas-g-brinca .pilas-cuerpo-todo {
+  animation: pilas-brinco 0.9s ease-in-out;
+}
+.pilas-g-brinca .pilas-brazo-d {
+  transform: rotate(-150deg);
+}
+.pilas-g-brinca .pilas-brazo-i {
+  transform: rotate(150deg);
+}
+
+/* ── Movimiento en toda la app ──────────────────────────────────────────── */
+/* Cambio de pantalla: solo opacidad (no crea contenedor para las barras fijas). */
+@keyframes aparece {
+  from {
+    opacity: 0;
+  }
+}
+.pagina {
+  animation: aparece 0.32s ease-out both;
+}
+/* Secciones que entran una tras otra. Termina en transform: none para no afectar elementos fijos. */
+@keyframes entra {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.entra > * {
+  animation: entra 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.entra > *:nth-child(2) {
+  animation-delay: 0.06s;
+}
+.entra > *:nth-child(3) {
+  animation-delay: 0.12s;
+}
+.entra > *:nth-child(4) {
+  animation-delay: 0.18s;
+}
+.entra > *:nth-child(5) {
+  animation-delay: 0.24s;
+}
+.entra > *:nth-child(6) {
+  animation-delay: 0.3s;
+}
+.entra > *:nth-child(n + 7) {
+  animation-delay: 0.36s;
+}
+/* Listas: cada fila un poquito después. */
+.entra-lista > * {
+  animation: entra 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.entra-lista > *:nth-child(2) {
+  animation-delay: 0.04s;
+}
+.entra-lista > *:nth-child(3) {
+  animation-delay: 0.08s;
+}
+.entra-lista > *:nth-child(4) {
+  animation-delay: 0.12s;
+}
+.entra-lista > *:nth-child(5) {
+  animation-delay: 0.16s;
+}
+.entra-lista > *:nth-child(n + 6) {
+  animation-delay: 0.2s;
+}
+
+/* Tarjetas y botones que responden al dedo. */
+a.card,
+button.card,
+a.sticker,
+.btn-pop {
+  transition:
+    transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.22s,
+    border-color 0.2s,
+    filter 0.12s;
+}
+@media (hover: hover) {
+  a.card:hover,
+  button.card:hover {
+    transform: translateY(-2px);
+    box-shadow: 4px 6px 0 rgb(35 28 22 / 0.12);
+  }
+  a.sticker:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 7px 7px 0 var(--pop);
+  }
+  .btn-pop:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 4px 4px 0 var(--pop);
+  }
+}
+a.card:active,
+button.card:active {
+  transform: scale(0.98);
+}
+a.sticker:active {
+  transform: translate(3px, 3px);
+  box-shadow: 2px 2px 0 var(--pop);
+}
+nav a svg,
+nav button svg {
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+nav a:active svg,
+nav button:active svg {
+  transform: scale(0.82);
+}
+
+/* El logo hace el «shaka» de vez en cuando, y al pasarle el dedo. */
+@keyframes marca-shaka {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  15% {
+    transform: rotate(-16deg);
+  }
+  32% {
+    transform: rotate(11deg);
+  }
+  50% {
+    transform: rotate(-9deg);
+  }
+  68% {
+    transform: rotate(5deg);
+  }
+  84% {
+    transform: rotate(-2deg);
+  }
+}
+@keyframes marca-shaka-ciclo {
+  0%,
+  13%,
+  100% {
+    transform: rotate(0deg);
+  }
+  2% {
+    transform: rotate(-16deg);
+  }
+  4.5% {
+    transform: rotate(11deg);
+  }
+  7% {
+    transform: rotate(-9deg);
+  }
+  9.5% {
+    transform: rotate(5deg);
+  }
+  11.5% {
+    transform: rotate(-2deg);
+  }
+}
+.marca-mano {
+  transform-origin: 32% 84%;
+}
+.marca-viva .marca-mano {
+  animation: marca-shaka-ciclo 9s ease-in-out 1.5s infinite;
+}
+.marca:hover .marca-mano,
+a:hover .marca .marca-mano,
+a:active .marca .marca-mano {
+  animation: marca-shaka 0.9s ease-in-out;
+}
+
+/* Campanita que suena cuando hay avisos sin leer. */
+@keyframes campana {
+  0%,
+  12%,
+  100% {
+    transform: rotate(0deg);
+  }
+  2% {
+    transform: rotate(16deg);
+  }
+  4% {
+    transform: rotate(-14deg);
+  }
+  6% {
+    transform: rotate(10deg);
+  }
+  8% {
+    transform: rotate(-6deg);
+  }
+  10% {
+    transform: rotate(3deg);
+  }
+}
+.campana {
+  transform-origin: 50% 10%;
+  animation: campana 7s ease-in-out 2s infinite;
+}
+
+/* Garabato que se dibuja solo. */
+@keyframes dibuja {
+  from {
+    stroke-dashoffset: 160;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.dibuja path {
+  stroke-dasharray: 160;
+  animation: dibuja 1.4s cubic-bezier(0.65, 0, 0.35, 1) 0.4s both;
+}
+.cinta {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.sticker:hover > .cinta {
+  transform: rotate(-4deg) scale(1.05);
+}
+.btn-pop:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--pop);
 }

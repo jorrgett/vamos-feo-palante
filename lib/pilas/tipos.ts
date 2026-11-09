@@ -50,7 +50,55 @@ export type Tarjeta =
       detalle: string;
     }
   | { tipo: "confirmar"; id: string; settlementIds: string[]; persona: PersonaVista; montoUsd: number; detalle: string }
-  | { tipo: "ir"; id: string; href: string; texto: string; emoji: string };
+  | { tipo: "ir"; id: string; href: string; texto: string; emoji: string }
+  // ── Tarjetas visuales (solo muestran, con gráficos y toques para ver más) ──
+  | {
+      tipo: "balance";
+      id: string;
+      meDebenUsd: number;
+      deboUsd: number;
+      personas: (PersonaVista & { userId: string; meDebeUsd: number; leDeboUsd: number; items: { titulo: string; usd: number; salidaId: string }[] })[];
+    }
+  | {
+      tipo: "salida_vista";
+      id: string;
+      salidaId: string;
+      titulo: string;
+      emoji: string;
+      fecha: string;
+      totalTexto: string;
+      totalUsd: number;
+      debenUsd: number;
+      pagadoUsd: number;
+      cerrada: boolean;
+      puedoRecordar: boolean;
+      personas: (PersonaVista & { yo: boolean; parteUsd: number; estado: "puso" | "pagado" | "por-confirmar" | "parcial" | "falta"; detalle: string })[];
+    }
+  | {
+      tipo: "gastos";
+      id: string;
+      periodo: string;
+      totalUsd: number;
+      salidas: number;
+      meses: { key: string; label: string; usd: number }[];
+      categorias: { id: string; label: string; emoji: string; usd: number }[];
+      mayor: { titulo: string; usd: number } | null;
+    }
+  | {
+      tipo: "cuotas";
+      id: string;
+      cuotas: { tienda: string; n: number; de: number; fecha: string; dias: number; usd: number; mia: boolean; titular: string; salidaId: string }[];
+    }
+  | {
+      tipo: "tasas";
+      id: string;
+      bcvUsd: number;
+      bcvEur: number;
+      usdt: number | null;
+      fecha: string;
+      historia: { bcvUsd: number[]; bcvEur: number[]; usdt: number[] };
+      cambio: { bcvUsd?: number | null; bcvEur?: number | null; usdt?: number | null };
+    };
 
 export type EstadoTarjeta = { estado: "hecho" | "descartado"; texto: string; href?: string };
 

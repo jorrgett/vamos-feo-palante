@@ -35,8 +35,8 @@ export function HeroBalance({ net, owedToMe, iOwe, name }: { net: number; owedTo
   const settled = Math.abs(net) < 1 && owedToMe < 1 && iOwe < 1;
   return (
     <div className="sticker relative bg-sun p-6 text-sun-ink sm:p-7">
-      <span className="tape -top-3 right-10 rotate-3" />
-      <Doodle kind="squiggle" className="absolute right-5 bottom-24 hidden size-16 opacity-30 sm:block" />
+      <span className="tape cinta -top-3 right-10 rotate-3" />
+      <Doodle kind="squiggle" className="dibuja absolute right-5 bottom-24 hidden size-16 opacity-30 sm:block" />
       <p className="display text-sm font-bold opacity-75">{settled ? `Todo en orden, ${name}` : "Tu balance con los panas"}</p>
       <Money usd={net} sign animated className="mt-1 block text-[2.6rem] leading-none font-bold tracking-tight sm:text-6xl" />
       <p className="mt-2 text-sm opacity-75">

@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: "Novedades" };
 export default async function Novedades() {
   await requireUser();
   return (
-    <div className="mx-auto max-w-2xl space-y-5">
+    <div className="entra mx-auto max-w-2xl space-y-5">
       <div>
         <h1 className="display text-3xl font-extrabold sm:text-4xl">Novedades ✨</h1>
         <p className="mt-1 text-muted">Lo que le vamos mejorando a la app, de lo más nuevo a lo más viejo.</p>

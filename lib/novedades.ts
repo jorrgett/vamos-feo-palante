@@ -13,6 +13,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-09.2",
+    date: "2026-11-09",
+    emoji: "🤙",
+    title: "Logo nuevo, Pilas con vida y gráficos en el chat",
+    items: [
+      { emoji: "🤙", text: "Logo nuevo: la mano de siempre, redibujada y saludando de vez en cuando. También cambió el ícono de la app." },
+      { emoji: "🔋", text: "Pilas ahora tiene brazos: te saluda, guiña, brinca cuando algo sale bien y se carga mientras piensa." },
+      { emoji: "📊", text: "En el chat, Pilas te muestra tu balance con barras por pana, tus gastos en gráficos, cómo va cada salida, tus cuotas en una línea de tiempo y las tasas con un convertidor." },
+      { emoji: "✨", text: "Toda la app se mueve más suave: las pantallas entran con estilo y hay papelitos cuando confirmas un pago." },
+    ],
+  },
+  {
     id: "2026-11-09.1",
     date: "2026-11-09",
     emoji: "🔋",
