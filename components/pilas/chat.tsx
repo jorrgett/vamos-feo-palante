@@ -141,11 +141,15 @@ export function PilasChat({
     if (cargado && !ocupado) guardar(userId, { v: 1, historial, items, estados, notas });
   }, [cargado, ocupado, userId, historial, items, estados, notas]);
 
-  // iPhone: con el teclado abierto la barra de escribir sube con él.
+  // iPhone: con el teclado abierto la barra de escribir sube con él. Los cambios chicos de alto (la barra de
+  // Safari que se esconde al deslizar) no son el teclado: si se tomaran como teclado, la página saltaría.
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
-    const f = () => setTeclado(Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)));
+    const f = () => {
+      const k = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+      setTeclado(k > 120 ? k : 0);
+    };
     vv.addEventListener("resize", f);
     vv.addEventListener("scroll", f);
     return () => {
@@ -154,15 +158,20 @@ export function PilasChat({
     };
   }, []);
 
+  // Se sigue el final solo si la persona está abajo: si sube a leer, no se la baja a la fuerza.
   useEffect(() => {
-    const f = () => (seguir.current = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 160);
+    const f = () => (seguir.current = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 80);
     window.addEventListener("scroll", f, { passive: true });
     return () => window.removeEventListener("scroll", f);
   }, []);
+  // Baja hasta el final (incluye el espacio de la barra de escribir) solo cuando llega algo nuevo, nunca al deslizar.
   useEffect(() => {
-    // Hasta el final de la página (incluye el espacio de la barra de escribir, así nada queda tapado).
-    if (seguir.current) window.scrollTo({ top: document.documentElement.scrollHeight });
-  }, [items, estado, teclado, foto]);
+    if (items.length && seguir.current) window.scrollTo({ top: document.documentElement.scrollHeight });
+  }, [items, estado, foto]);
+  // Al abrir el teclado, que se vea lo último de la conversación.
+  useEffect(() => {
+    if (teclado && items.length) window.scrollTo({ top: document.documentElement.scrollHeight });
+  }, [teclado, items.length]);
 
   useEffect(() => () => abortar.current?.abort(), []);
 

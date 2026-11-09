@@ -13,6 +13,13 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-09.3",
+    date: "2026-11-09",
+    emoji: "🔧",
+    title: "Arreglo en el chat de Pilas",
+    items: [{ emoji: "📱", text: "En el iPhone, la pantalla de Pilas ya no se baja sola cuando subes para leer." }],
+  },
+  {
     id: "2026-11-09.2",
     date: "2026-11-09",
     emoji: "🤙",
