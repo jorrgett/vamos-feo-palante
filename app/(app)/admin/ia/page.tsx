@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import clsx from "clsx";
-import { AI_DAILY_LIMIT, AI_MODEL, aiEnabled } from "@/lib/ai";
+import { AI_DAILY_LIMIT, AI_MODEL, aiEnabled, PILAS_DAILY_LIMIT } from "@/lib/ai";
 import { aiUsageOverview, fmtCost, fmtWhen, requireAdmin } from "@/lib/admin";
 import { Avatar } from "@/components/ui";
 import { AdminHeader } from "../admin-header";
 
 export const metadata: Metadata = { title: "Consumo de IA" };
 
-const TASK = { factura: "🧾 Factura", comprobante: "📎 Comprobante" } as Record<string, string>;
+const TASK = { factura: "🧾 Factura", comprobante: "📎 Comprobante", pilas: "🔋 Pilas" } as Record<string, string>;
 const tokens = (n: number) => (n >= 1000 ? `${(n / 1000).toLocaleString("es-VE", { maximumFractionDigits: 1 })} mil` : String(n));
 
 export default async function AdminIa() {
@@ -25,7 +25,7 @@ export default async function AdminIa() {
         <p className="text-sm font-semibold opacity-75">{on ? "IA activa" : "IA apagada"}</p>
         <p className="display mt-1 text-2xl font-extrabold break-all">{AI_MODEL}</p>
         <p className="mt-2 text-sm opacity-80">
-          Límite: {AI_DAILY_LIMIT} usos por persona al día
+          Límite por persona al día: {AI_DAILY_LIMIT} fotos (facturas y comprobantes) y {PILAS_DAILY_LIMIT} mensajes a Pilas
           {all.calls > 0 && ` · promedio ${fmtCost(Math.round(all.costMicros / all.calls))} por uso`}
         </p>
       </section>
@@ -53,7 +53,7 @@ export default async function AdminIa() {
           Por persona <span className="chip align-middle">{byUser.length}</span>
         </h2>
         {byUser.length === 0 ? (
-          <p className="card p-5 text-sm text-muted">Nadie ha usado la IA todavía. Cuando alguien escanee una factura o suba un comprobante, sale aquí.</p>
+          <p className="card p-5 text-sm text-muted">Nadie ha usado la IA todavía. Cuando alguien escanee una factura, suba un comprobante o hable con Pilas, sale aquí.</p>
         ) : (
           <ul className="card divide-y divide-line overflow-clip">
             {byUser.map((u) => {
@@ -66,6 +66,8 @@ export default async function AdminIa() {
                       {u.facturas > 0 && `🧾 ${u.facturas} ${u.facturas === 1 ? "factura" : "facturas"}`}
                       {u.facturas > 0 && u.comprobantes > 0 && " · "}
                       {u.comprobantes > 0 && `📎 ${u.comprobantes} ${u.comprobantes === 1 ? "comprobante" : "comprobantes"}`}
+                      {(u.facturas > 0 || u.comprobantes > 0) && u.pilas > 0 && " · "}
+                      {u.pilas > 0 && `🔋 ${u.pilas} ${u.pilas === 1 ? "llamada a Pilas" : "llamadas a Pilas"}`}
                       {u.fallos > 0 && <span className="font-semibold text-rose"> · {u.fallos} fallaron</span>}
                     </p>
                     <p className="text-[11px] text-faint">Último uso: {fmtWhen(u.last)}</p>

@@ -19,6 +19,9 @@ import { Money } from "@/components/display";
 import { PersonDebts } from "@/components/person-debts";
 import { PushCard } from "@/components/push";
 import { proofsFor } from "@/lib/proofs";
+import { aiEnabled } from "@/lib/ai";
+import { sugerenciasPilas } from "@/lib/pilas/sugerencias";
+import { PilasInvitacion } from "@/components/pilas/invitacion";
 
 export const metadata: Metadata = { title: "Inicio" };
 
@@ -72,6 +75,7 @@ export default async function Inicio() {
     { done: bundles.length > 0, label: "Anota tu primera salida", hint: "El que puso la plata la anota", href: "/salidas/nueva" },
   ];
   const pendingSteps = steps.filter((s) => !s.done).length;
+  const pilas = aiEnabled() ? await sugerenciasPilas(user.id) : null;
 
   return (
     <div className="space-y-8">
@@ -83,6 +87,8 @@ export default async function Inicio() {
           {g.text}, {user.name} {g.emoji}
         </h1>
       </div>
+
+      {pilas && <PilasInvitacion sugerencias={pilas} />}
 
       {pendingSteps > 0 && (
         <section className="sticker bg-card p-5">

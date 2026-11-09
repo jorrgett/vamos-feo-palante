@@ -21,7 +21,7 @@ const emptyTotals = (): Totals => ({ calls: 0, ok: 0, costMicros: 0, inputTokens
 
 export type AiUsageView = {
   periods: { label: string; t: Totals }[];
-  byUser: { userId: string | null; name: string; avatar: string; color: string; facturas: number; comprobantes: number; fallos: number; costMicros: number; last: Date }[];
+  byUser: { userId: string | null; name: string; avatar: string; color: string; facturas: number; comprobantes: number; pilas: number; fallos: number; costMicros: number; last: Date }[];
   recent: { id: number; at: Date; name: string; task: string; model: string; inputTokens: number; outputTokens: number; costMicros: number; ok: boolean; error: string | null; ms: number }[];
 };
 
@@ -65,11 +65,13 @@ export async function aiUsageOverview(): Promise<AiUsageView> {
       color: color ?? "#9CA3AF",
       facturas: 0,
       comprobantes: 0,
+      pilas: 0,
       fallos: 0,
       costMicros: 0,
       last: u.createdAt,
     };
     if (u.task === "factura") cur.facturas++;
+    else if (u.task === "pilas") cur.pilas++;
     else cur.comprobantes++;
     if (!u.ok) cur.fallos++;
     cur.costMicros += u.costMicros;

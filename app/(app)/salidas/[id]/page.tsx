@@ -18,6 +18,8 @@ import { ShareChecklist } from "@/components/share-checklist";
 import { SalidaActions } from "@/components/salida-actions";
 import { ProofButton } from "@/components/proof";
 import { proofsFor } from "@/lib/proofs";
+import { aiEnabled } from "@/lib/ai";
+import { PilasMascota } from "@/components/pilas/mascota";
 
 export const metadata: Metadata = { title: "Salida" };
 
@@ -94,6 +96,14 @@ export default async function SalidaPage({ params }: { params: Promise<{ id: str
           <p className="mt-3 text-xs text-muted">
             {categoryLabel(e)} · {MODE_LABEL[e.split.mode]} · tasa {src === "custom" ? "propia" : RATE_META[src].short} {fmtNumber(e.fx.vesPerUsd)} Bs/$
           </p>
+          {aiEnabled() && (
+            <Link
+              href={`/pilas?q=${encodeURIComponent(`Explícame la salida «${e.title}»: de dónde sale lo que le toca a cada quien`)}&s=${ledger.group.id.slice(0, 8)}`}
+              className="btn-pop btn-pop-paper mt-4 py-1.5 pr-4 pl-2 text-sm"
+            >
+              <PilasMascota size={26} /> Que Pilas me la explique
+            </Link>
+          )}
         </div>
         <div className="space-y-5 border-t-2 border-dashed border-line-strong p-6">
           <section>

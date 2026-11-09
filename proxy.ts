@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 // Chequeo optimista: si no hay cookie de sesión, directo a /entrar.
 // La verificación real de la sesión ocurre en el servidor (lib/auth).
-const PRIVATE = ["/inicio", "/salidas", "/pagar", "/panas", "/bienvenida", "/cashea", "/tasas", "/historial", "/calculadora", "/perfil", "/avisos", "/admin", "/novedades"];
+const PRIVATE = ["/inicio", "/salidas", "/pagar", "/panas", "/bienvenida", "/cashea", "/tasas", "/historial", "/calculadora", "/perfil", "/avisos", "/admin", "/novedades", "/pilas"];
 
 export function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
@@ -15,5 +15,5 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/inicio/:path*", "/salidas/:path*", "/pagar/:path*", "/panas/:path*", "/bienvenida/:path*", "/cashea/:path*", "/tasas/:path*", "/historial/:path*", "/calculadora/:path*", "/perfil/:path*", "/avisos/:path*", "/admin/:path*", "/novedades/:path*"],
+  matcher: ["/inicio/:path*", "/salidas/:path*", "/pagar/:path*", "/panas/:path*", "/bienvenida/:path*", "/cashea/:path*", "/tasas/:path*", "/historial/:path*", "/calculadora/:path*", "/perfil/:path*", "/avisos/:path*", "/admin/:path*", "/novedades/:path*", "/pilas/:path*"],
 };

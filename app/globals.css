@@ -408,3 +408,72 @@ input[type="number"]::-webkit-outer-spin-button {
 .safe-bottom-sheet {
   padding-bottom: max(calc(env(safe-area-inset-bottom) + 1rem), 2rem);
 }
+
+/* ── Pilas 🔋: la mascota se carga mientras piensa ─────────────────────── */
+@keyframes pilas-ola {
+  to {
+    transform: translateX(-32px);
+  }
+}
+@keyframes pilas-carga {
+  0%,
+  100% {
+    transform: translateY(14px);
+  }
+  50% {
+    transform: translateY(-16px);
+  }
+}
+@keyframes pilas-parpadeo {
+  0%,
+  93%,
+  100% {
+    transform: scaleY(1);
+  }
+  96% {
+    transform: scaleY(0.12);
+  }
+}
+@keyframes pilas-rayo {
+  50% {
+    opacity: 0.25;
+  }
+}
+@keyframes pilas-brinco {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  30% {
+    transform: translateY(-5px) rotate(-4deg);
+  }
+  60% {
+    transform: translateY(0) rotate(3deg);
+  }
+}
+.pilas-ola {
+  animation: pilas-ola 2.6s linear infinite;
+}
+.pilas-ojos {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pilas-parpadeo 4.8s infinite;
+}
+.pilas-mirada {
+  transition: transform 0.3s;
+}
+.pilas-pensando .pilas-nivel {
+  animation: pilas-carga 1.8s ease-in-out infinite;
+}
+.pilas-pensando .pilas-ola {
+  animation-duration: 0.9s;
+}
+.pilas-pensando .pilas-rayo {
+  animation: pilas-rayo 0.7s steps(2, jump-none) infinite;
+}
+.pilas-pensando .pilas-mirada {
+  transform: translate(2px, -2px);
+}
+.pilas-feliz {
+  animation: pilas-brinco 0.9s ease-in-out 2;
+}

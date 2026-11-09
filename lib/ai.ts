@@ -13,7 +13,7 @@ export const aiEnabled = () => !!process.env.ANTHROPIC_API_KEY;
 let client: Anthropic | null = null;
 // Si la API key vale para varios workspaces, cada solicitud debe decir en cuál cobrar (ANTHROPIC_WORKSPACE_ID, wrkspc_…).
 const workspace = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
-const getClient = () =>
+export const getClient = () =>
   (client ??= new Anthropic({ timeout: 90_000, maxRetries: 1, defaultHeaders: workspace ? { "anthropic-workspace-id": workspace } : undefined }));
 
 export class AiError extends Error {
@@ -27,13 +27,22 @@ export class AiError extends Error {
 
 /** Cuenta un uso de IA (en login_attempts con la clave ia:<id>; las filas viejas se limpian solas). */
 export async function spendAiQuota(userId: string) {
+  await spendQuota(`ia:${userId}`, AI_DAILY_LIMIT, "Ya usaste la IA muchas veces hoy. Vuelve mañana o anótalo a mano.");
+}
+
+/** Mensajes a Pilas por persona cada 24 h (aparte de las facturas y los comprobantes). */
+export const PILAS_DAILY_LIMIT = 50;
+export async function spendPilasQuota(userId: string) {
+  await spendQuota(`pilas:${userId}`, PILAS_DAILY_LIMIT, "Hoy ya hablamos burda 😅 Pilas descansa y vuelve mañana con la batería full.");
+}
+
+async function spendQuota(key: string, limit: number, message: string) {
   const db = await getDb();
-  const key = `ia:${userId}`;
   const [{ n }] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(schema.loginAttempts)
     .where(and(eq(schema.loginAttempts.key, key), gt(schema.loginAttempts.createdAt, new Date(Date.now() - 86_400_000))));
-  if (n >= AI_DAILY_LIMIT) throw new AiError("limite", "Ya usaste la IA muchas veces hoy. Vuelve mañana o anótalo a mano.");
+  if (n >= limit) throw new AiError("limite", message);
   await db.insert(schema.loginAttempts).values({ key });
 }
 
@@ -50,13 +59,14 @@ const PRICES: Record<string, [number, number]> = {
   "claude-fable-5-1": [10, 50],
 };
 /** Costo en millonésimas de dólar ($ por millón de tokens = millonésimas de $ por token). */
-export const costMicros = (model: string, input: number, output: number) => {
+export const costMicros = (model: string, input: number, output: number, cache: { write?: number; read?: number } = {}) => {
   const [i, o] = PRICES[model] ?? PRICES["claude-sonnet-5-5"];
-  return Math.round(input * i + output * o);
+  // Lo que se guarda en caché cuesta 1,25 veces la entrada y lo que se lee de ella, una décima parte.
+  return Math.round((input + (cache.write ?? 0) * 1.25 + (cache.read ?? 0) * 0.1) * i + output * o);
 };
 
 type UsageRow = typeof schema.aiUsage.$inferInsert;
-async function logUsage(row: UsageRow) {
+export async function logUsage(row: UsageRow) {
   try {
     const db = await getDb();
     await db.insert(schema.aiUsage).values(row);

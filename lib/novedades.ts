@@ -13,6 +13,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-09.1",
+    date: "2026-11-09",
+    emoji: "🔋",
+    title: "Llegó Pilas, tu pana con las cuentas",
+    items: [
+      { emoji: "💬", text: "Pregúntale lo que sea de tus cuentas: a quién le debes y por qué, quién te debe, cuándo vence tu cuota de Cashea o cuánto has gastado este mes." },
+      { emoji: "📝", text: "Dile «anota que ayer pagué 30$ de pizza con Ana y Luis» o mándale la foto de la factura y te arma la salida. Tú la revisas y la anotas con un toque." },
+      { emoji: "⏰", text: "También te prepara recordatorios y mensajes para cobrar (por la app o por WhatsApp), anota pagos que te hicieron por fuera y te lleva directo a pagar." },
+      { emoji: "🔋", text: "Lo encuentras arriba (la pila con cara), en el botón «+» y en cada salida con «Que Pilas me la explique». Usa inteligencia artificial: revisa cada tarjeta antes de tocarla." },
+    ],
+  },
+  {
     id: "2026-11-01.2",
     date: "2026-11-01",
     emoji: "🛍️",

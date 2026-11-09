@@ -23,12 +23,14 @@ import {
   UserPlus,
   Crown,
   Sparkles,
+  BatteryCharging,
 } from "lucide-react";
 import { logout } from "@/app/actions/auth";
 import { myUnreadCount } from "@/app/actions/notifications";
 import { Logo } from "./brand";
 import { CurrencySwitch, useDisplay } from "./display";
 import { Avatar, Sheet } from "./ui";
+import { PilasMascota } from "./pilas/mascota";
 import { fmtNumber } from "@/lib/money";
 
 type NavUser = { name: string; avatar: string; color: string; email: string };
@@ -36,6 +38,7 @@ type NavGroup = { id: string; name: string; emoji: string; color: string };
 
 const MAIN = [
   { href: "/inicio", label: "Inicio", icon: Home },
+  { href: "/pilas", label: "Pilas", icon: BatteryCharging },
   { href: "/salidas", label: "Salidas", icon: PartyPopper },
   { href: "/panas", label: "Panas", icon: Users },
   { href: "/avisos", label: "Avisos", icon: Bell },
@@ -118,6 +121,7 @@ export function Sidebar({ user, groups, admin, news }: { user: NavUser; groups: 
               <item.icon size={19} strokeWidth={active ? 2.4 : 2} className={active ? "text-mango-ink" : ""} />
               {item.label}
               {news && item.href === "/novedades" && <span className="ml-auto rounded-full bg-mango px-2 py-0.5 text-[10px] font-bold text-on-color">Nuevo</span>}
+              {item.href === "/pilas" && <span className="ml-auto rounded-full border border-ink bg-sun px-2 py-0.5 text-[10px] font-bold text-sun-ink">IA</span>}
             </Link>
           );
         })}
@@ -158,6 +162,18 @@ export function Sidebar({ user, groups, admin, news }: { user: NavUser; groups: 
   );
 }
 
+/** Pilas 🔋 a un toque desde cualquier pantalla. */
+function PilasButton() {
+  const path = usePathname();
+  if (path.startsWith("/pilas") || path.startsWith("/bienvenida")) return null;
+  return (
+    <Link href="/pilas" aria-label="Pregúntale a Pilas" title="Pregúntale a Pilas" className="flex h-10 items-center gap-1.5 rounded-full px-1.5 hover:bg-card-2 sm:pr-3">
+      <PilasMascota size={30} />
+      <span className="hidden text-sm font-bold sm:inline">Pilas</span>
+    </Link>
+  );
+}
+
 export function TopBar({ user, unread }: { user: NavUser; unread: number }) {
   const { rates, rateSource } = useDisplay();
   return (
@@ -177,6 +193,7 @@ export function TopBar({ user, unread }: { user: NavUser; unread: number }) {
           )}
         </Link>
         <CurrencySwitch className="ml-auto sm:ml-0" />
+        <PilasButton />
         <NoticeBell unread={unread} />
         <Link href="/perfil" className="hidden sm:block lg:hidden" aria-label="Perfil">
           <Avatar emoji={user.avatar} color={user.color} size={34} />
@@ -188,7 +205,7 @@ export function TopBar({ user, unread }: { user: NavUser; unread: number }) {
 }
 
 // Pantallas paso a paso: tienen su propia barra abajo, así que se esconde la navegación.
-const FLOWS = [/^\/salidas\/nueva/, /^\/salidas\/[^/]+\/editar/, /^\/pagar/, /^\/bienvenida/];
+const FLOWS = [/^\/salidas\/nueva/, /^\/salidas\/[^/]+\/editar/, /^\/pagar/, /^\/bienvenida/, /^\/pilas/];
 
 export function BottomNav({ groups, admin, news }: { groups: NavGroup[]; admin?: boolean; news?: boolean }) {
   const path = usePathname();
@@ -261,6 +278,7 @@ function QuickAdd({ variant }: { groups?: NavGroup[]; variant: "fab" | "sidebar"
     router.push(href);
   };
   const options = [
+    { href: "/pilas", icon: BatteryCharging, title: "Pídeselo a Pilas", sub: "Escríbelo como a un pana: «anota que ayer pagué 30$ de pizza con Ana y Luis»", tint: "var(--violet)" },
     { href: "/salidas/nueva", icon: Receipt, title: "Anotar una salida", sub: "Fuimos a comer, a tomar, a la playa… y alguien puso la plata", tint: "var(--mango)" },
     { href: "/pagar", icon: HandCoins, title: "Pagarle a un pana", sub: "Te muestro sus datos y cuánto le debes", tint: "var(--mint)" },
     { href: "/panas#invitar", icon: UserPlus, title: "Invitar a un pana", sub: "Mándale el link para que entre", tint: "var(--violet)" },
