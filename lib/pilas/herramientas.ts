@@ -191,13 +191,16 @@ export const HERRAMIENTAS: Anthropic.Beta.BetaTool[] = [
   {
     name: "proponer_marcar_pagado",
     description:
-      "Tarjeta para que quien cobra anote que recibió el saldo completo o un abono parcial de un pana, indicando el método y la moneda realmente recibidos (efectivo, pago móvil, punto, Zelle, Binance/USDT, Cashea, tarjeta, euros u otro). Para un abono parcial exige salida concreta y monto_usd; nunca anotes un abono general entre varias salidas. Úsala cuando la persona diga que le pagaron por fuera de la app.",
+      "Tarjeta para que quien cobra anote que recibió el saldo completo o un abono parcial de un pana. Para un abono parcial exige salida concreta y monto_recibido en la moneda realmente recibida (Bs, USD, EUR o USDT), y si son bolívares identifica fuente_tasa (BCV $, USDT, BCV €) o tasa_ves_usd si dijeron una tasa propia. Nunca anotes un abono general entre varias salidas. Úsala cuando la persona diga que le pagaron por fuera de la app.",
     input_schema: S({
       pana,
       salida: str("Salida concreta donde recibió el pago. Obligatoria para anotar un abono parcial."),
       monto_usd: { type: "number", description: "Monto recibido en dólares, en unidades (ej. 12.50). Si es menor que el pendiente, se registra como abono. Sin indicar: pago completo." },
+      monto_recibido: { type: "number", description: "Monto realmente recibido, en unidades de la moneda elegida (ej. 1500 Bs o 5.25 EUR). Preferido si se indica la moneda." },
       metodo: { type: "string", enum: METODOS },
       moneda: { type: "string", enum: [...CURRENCIES] },
+      fuente_tasa: { type: "string", enum: ["bcv", "usdt", "eur", "custom"], description: "Tasa Bs/USD usada al recibir bolívares. Por defecto usa la tasa configurada para la salida." },
+      tasa_ves_usd: { type: "number", description: "Tasa propia en Bs por dólar, si la persona la indicó." },
     }),
   },
   {
@@ -534,10 +537,10 @@ function proponerRecordatorio(raw: unknown, ctx: PilasCtx): Resultado {
 }
 
 function proponerPagado(raw: unknown, ctx: PilasCtx): Resultado {
-  const i = z.object({ pana: z.string().min(1), salida: z.string().optional(), monto_usd: z.number().positive().optional(), metodo: z.enum(METODOS).optional(), moneda: z.enum(CURRENCIES).optional() }).parse(raw);
+  const i = z.object({ pana: z.string().min(1), salida: z.string().optional(), monto_usd: z.number().positive().optional(), monto_recibido: z.number().positive().optional(), metodo: z.enum(METODOS).optional(), moneda: z.enum(CURRENCIES).optional(), fuente_tasa: z.enum(["bcv", "usdt", "eur", "custom"]).optional(), tasa_ves_usd: z.number().positive().optional() }).parse(raw);
   const p = buscarPana(ctx, i.pana);
   if (p.isMe) return { texto: "Para lo que debe quien escribe, usa mostrar_boton con destino pagar.", error: true };
-  if (i.monto_usd != null && !i.salida) return { texto: "Un abono parcial siempre se anota en una salida concreta. Dime cuál salida y te preparo la tarjeta.", error: true };
+  if ((i.monto_usd != null || i.monto_recibido != null) && !i.salida) return { texto: "Un abono siempre se anota en una salida concreta. Dime cuál salida y te preparo la tarjeta.", error: true };
   const metodo = i.metodo ?? "otro";
   const moneda = i.moneda ?? monedaDeMetodo(i.metodo);
   if (i.salida) {
@@ -553,13 +556,21 @@ function proponerPagado(raw: unknown, ctx: PilasCtx): Resultado {
     if (!iCollect && !creator) return { texto: `Solo quien cobra o quien anotó «${e.title}» puede marcar ese pago.`, error: true };
     const rest = parts.reduce((a, x) => a + remainingTo(eLike, linked, m.id, x.to), 0);
     if (rest <= 0) return { texto: `${p.name} ya no debe nada en «${e.title}».`, error: true };
-    const amountUsd = i.monto_usd == null ? rest : Math.round(i.monto_usd * 100);
+    const moneda = i.moneda ?? monedaDeMetodo(i.metodo);
+    if (i.monto_recibido != null && metodo !== "otro" && payMethodOf(metodo).currency !== moneda) return { texto: `«${payMethodOf(metodo).label}» recibe ${payMethodOf(metodo).currency}; dime el método que usaste para pagar en ${moneda}.`, error: true };
+    const fuenteTasa = i.fuente_tasa ?? (e.fx.source === "custom" ? "custom" : e.fx.source as RateSourceId);
+    if (moneda === "VES" && fuenteTasa === "custom" && i.fuente_tasa === "custom" && i.tasa_ves_usd == null && e.fx.source !== "custom") return { texto: "Dime cuántos bolívares por dólar usaron para ese abono.", error: true };
+    const tasaVesUsd = fuenteTasa === "custom" ? (i.tasa_ves_usd ?? e.fx.vesPerUsd) : vesPerUsd(ctx.rates, fuenteTasa as RateSourceId);
+    const montoRecibido = i.monto_recibido == null ? undefined : Math.round(i.monto_recibido * 100);
+    const amountUsd = montoRecibido != null
+      ? toUsdCents(montoRecibido, moneda, { vesPerUsd: moneda === "VES" ? tasaVesUsd : (e.fx.source === "custom" ? e.fx.vesPerUsd : vesPerUsd(ctx.rates, e.fx.source as RateSourceId)), vesPerEur: ctx.rates.bcvEur, vesPerUsdt: ctx.rates.usdt })
+      : i.monto_usd == null ? rest : Math.round(i.monto_usd * 100);
     if (amountUsd <= 0 || amountUsd > rest) return { texto: `El monto recibido no puede pasar de lo pendiente (${usd(rest)}).`, error: true };
     if (ledger.cashea.some((c) => c.expenseId === e.id && c.mode === "espejo"))
       return { texto: "Esa salida es con Cashea por cuotas: las cuotas se anotan en la salida. Manda mostrar_boton con destino salida.", error: true };
     return {
-      texto: `Tarjeta lista para anotar que ${p.name} ${amountUsd < rest ? `te abonó ${usd(amountUsd)} de` : "ya pagó"} su parte de «${e.title}» (${usd(rest)} pendientes). Todavía NO está anotado.`,
-      tarjeta: { tipo: "pagado", id: id(), persona: vista(p), salidaId: ledger.group.id, memberId: m.id, metodo, moneda, montoUsd: amountUsd, abono: amountUsd < rest, detalle: `Su parte de «${e.title}»` },
+      texto: `Tarjeta lista para anotar que ${p.name} ${amountUsd < rest ? `te abonó ${montoRecibido != null ? `${fmt(montoRecibido, moneda)} (${usd(amountUsd)})` : usd(amountUsd)} de` : "ya pagó"} su parte de «${e.title}» (${usd(rest)} pendientes). Todavía NO está anotado.`,
+      tarjeta: { tipo: "pagado", id: id(), persona: vista(p), salidaId: ledger.group.id, memberId: m.id, metodo, moneda, montoUsd: amountUsd, ...(montoRecibido != null ? { montoRecibido, fuenteTasa, ...(fuenteTasa === "custom" ? { tasaVesUsd } : {}) } : {}), abono: amountUsd < rest, detalle: `Su parte de «${e.title}»` },
     };
   }
   const pb = personBalances(ctx.bundles).find((x) => x.userId === p.id);

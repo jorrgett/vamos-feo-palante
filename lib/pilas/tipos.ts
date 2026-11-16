@@ -48,6 +48,10 @@ export type Tarjeta =
       metodo: string;
       moneda: Currency;
       montoUsd: number;
+      /** Monto real recibido en la moneda indicada, en centavos. */
+      montoRecibido?: number;
+      fuenteTasa?: "bcv" | "usdt" | "eur" | "custom";
+      tasaVesUsd?: number;
       abono?: boolean;
       detalle: string;
     }

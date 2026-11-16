@@ -13,7 +13,7 @@ import {
   unmarkSharePaid,
 } from "@/app/actions/salidas";
 import { dueLabel } from "@/lib/cashea";
-import { fmt, fmtNumber, type Currency } from "@/lib/money";
+import { fmt, fmtNumber, parseAmount, toUsdCents, fromUsdCents, type Currency } from "@/lib/money";
 import { PAY_METHODS } from "@/lib/constants";
 import { RATE_META, vesPerUsd, type RateSourceId } from "@/lib/rates-shared";
 import { useDisplay, Money } from "./display";
@@ -57,12 +57,16 @@ const METHODS = PAY_METHODS.map((m) => ({ id: m.id, label: `${m.emoji} ${m.label
 export function ShareChecklist({
   salidaId,
   groupRate,
+  fxSource,
+  customRate,
   rows,
   closed,
   readOnly = false,
 }: {
   salidaId: string;
   groupRate: RateSourceId;
+  fxSource: string;
+  customRate: number;
   rows: ChecklistRow[];
   closed: boolean;
   /** Solo mirar (el administrador viendo como otra persona): sin botones. */
@@ -78,15 +82,24 @@ export function ShareChecklist({
   const [cur, setCur] = useState<Currency>("VES");
   const [isPartial, setIsPartial] = useState(false);
   const [partialAmount, setPartialAmount] = useState("");
-  const rate = vesPerUsd(rates, groupRate);
+  const [paidRateSource, setPaidRateSource] = useState<RateSourceId | "custom">(() => fxSource === "custom" ? "custom" : (fxSource as RateSourceId));
+  const [paidCustomRate, setPaidCustomRate] = useState(String(customRate || ""));
+  const paidRate = paidRateSource === "custom" ? (parseAmount(paidCustomRate) ?? 0) / 100 : vesPerUsd(rates, paidRateSource);
+  const rate = paidRate > 0 && Number.isFinite(paidRate) ? paidRate : vesPerUsd(rates, groupRate);
+  const partialCents = parseAmount(partialAmount);
+  const configuredRate = fxSource === "custom" ? customRate : vesPerUsd(rates, fxSource as RateSourceId);
+  const partialUsd = partialCents != null && partialCents > 0 ? toUsdCents(partialCents, cur, { vesPerUsd: cur === "VES" ? rate : configuredRate, vesPerEur: rates.bcvEur, vesPerUsdt: rates.usdt }) : 0;
   const changeCurrency = (next: Currency) => {
     if (partialAmount && next !== cur) {
-      const entered = Number(partialAmount);
-      const inUsd = cur === "VES" ? entered / rate : cur === "EUR" ? (entered * rates.bcvEur) / rate : entered;
-      const nextAmount = next === "VES" ? inUsd * rate : next === "EUR" ? (inUsd * rate) / rates.bcvEur : inUsd;
-      setPartialAmount(nextAmount.toFixed(2));
+      const cents = parseAmount(partialAmount);
+      if (cents != null) {
+        const inUsd = toUsdCents(cents, cur, { vesPerUsd: cur === "VES" ? rate : configuredRate, vesPerEur: rates.bcvEur, vesPerUsdt: rates.usdt });
+        const nextAmount = fromUsdCents(inUsd, next, { vesPerUsd: next === "VES" ? rate : configuredRate, vesPerEur: rates.bcvEur, vesPerUsdt: rates.usdt });
+        setPartialAmount((nextAmount / 100).toFixed(2));
+      }
     }
     setCur(next);
+    setMethod((current) => METHODS.some((m) => m.id === current && (m.cur === next || m.id === "otro")) ? current : (METHODS.find((m) => m.cur === next)?.id ?? "otro"));
   };
 
   const debtors = rows.filter((r) => r.owesUsd > 0);
@@ -256,7 +269,7 @@ export function ShareChecklist({
                       {r.isMe ? "Le debes" : "Le debe"}{" "}
                       <Money usd={r.owesUsd} /> a {r.owesTo} ·{" "}
                       <span className="num">
-                        {fmt(Math.round(rest * rate), "VES")}
+                        {fmt(Math.round(rest * configuredRate), "VES")}
                       </span>
                     </>
                   )}
@@ -423,11 +436,11 @@ export function ShareChecklist({
                 {fmt(paying.owesUsd - paying.paidUsd, "USD")}
               </p>
               <p className="num text-sm opacity-75">
-                {fmt(
-                  Math.round((paying.owesUsd - paying.paidUsd) * rate),
+                  {fmt(
+                  Math.round((paying.owesUsd - paying.paidUsd) * configuredRate),
                   "VES",
                 )}{" "}
-                a {RATE_META[groupRate].short} {fmtNumber(rate)}
+                  a {fxSource === "custom" ? "tasa propia" : RATE_META[fxSource as RateSourceId].short} {fmtNumber(configuredRate)}
               </p>
             </div>
             <div>
@@ -439,21 +452,33 @@ export function ShareChecklist({
               {isPartial && (
                 <div className="mt-3">
                   <label className="label" htmlFor="received-amount">Monto recibido en {cur === "VES" ? "bolívares" : cur === "EUR" ? "euros" : cur === "USDT" ? "USDT" : "dólares"}</label>
-                  <input id="received-amount" className="field num" type="number" inputMode="decimal" min="0.01" step="0.01" value={partialAmount} onChange={(e) => setPartialAmount(e.target.value)} />
+                  <input id="received-amount" className="field num" type="text" inputMode="decimal" placeholder={cur === "VES" ? "Ej. 1.500,00" : "Ej. 5,00"} value={partialAmount} onChange={(e) => setPartialAmount(e.target.value)} />
                   <p className="mt-1 text-xs text-muted">El saldo pendiente se actualizará después de confirmar el pago.</p>
+                  {cur === "VES" && <div className="mt-3 space-y-2">
+                    <label className="label block" htmlFor="received-rate">Tasa con la que recibiste esos Bs (Bs por $)</label>
+                    <select id="received-rate-source" className="field" value={paidRateSource} onChange={(e) => setPaidRateSource(e.target.value as RateSourceId | "custom")}>
+                      <option value="bcv">BCV $ · {fmtNumber(vesPerUsd(rates, "bcv"))}</option><option value="usdt">USDT · {fmtNumber(vesPerUsd(rates, "usdt"))}</option><option value="eur">BCV € · equivalente {fmtNumber(vesPerUsd(rates, "eur"))}</option><option value="custom">Otra tasa</option>
+                    </select>
+                    {paidRateSource === "custom" && <input id="received-rate" className="field num" type="text" inputMode="decimal" placeholder="Bs por cada $" value={paidCustomRate} onChange={(e) => setPaidCustomRate(e.target.value)} />}
+                    <p className="text-xs text-muted">El saldo de la salida se descuenta al equivalente de esta tasa.</p>
+                  </div>}
+                  <p className="mt-2 text-sm font-semibold">Equivale a {fmt(partialUsd, "USD")} · quedan {fmt(Math.max(0, paying.owesUsd - paying.paidUsd - partialUsd), "USD")}</p>
                 </div>
               )}
             </div>
             <div>
+              <p className="label">Moneda recibida</p>
+              <Segmented name="paid-cur" value={cur} onChange={changeCurrency} options={[{ value: "VES", label: "Bolívares" }, { value: "USD", label: "Dólares" }, { value: "EUR", label: "Euros" }, { value: "USDT", label: "USDT" }]} />
+            </div>
+            <div>
               <p className="label">¿Cómo pagó?</p>
               <div className="grid grid-cols-2 gap-2">
-                {METHODS.map((m) => (
+                {METHODS.filter((m) => m.cur === cur || m.id === "otro").map((m) => (
                   <button
                     key={m.id}
                     type="button"
                     onClick={() => {
                       setMethod(m.id);
-                      changeCurrency(m.cur);
                     }}
                     className={clsx(
                       "rounded-2xl border-2 px-3 py-2.5 text-sm font-semibold",
@@ -467,25 +492,11 @@ export function ShareChecklist({
                 ))}
               </div>
             </div>
-            <div>
-              <p className="label">Se anota en</p>
-              <Segmented
-                name="paid-cur"
-                value={cur}
-                onChange={changeCurrency}
-                options={[
-                  { value: "VES", label: "Bolívares" },
-                  { value: "USD", label: "Dólares" },
-                  { value: "EUR", label: "Euros" },
-                  { value: "USDT", label: "USDT" },
-                ]}
-              />
-            </div>
             <Button
               size="lg"
               className="w-full"
               loading={pending}
-              disabled={isPartial && (!Number.isFinite(Number(partialAmount)) || Number(partialAmount) <= 0 || Math.round(Number(partialAmount) * 100 * (cur === "VES" ? 1 / rate : cur === "EUR" ? rates.bcvEur / rate : 1)) > paying.owesUsd - paying.paidUsd)}
+              disabled={isPartial && (partialUsd <= 0 || partialUsd > paying.owesUsd - paying.paidUsd || (cur === "VES" && (!Number.isFinite(rate) || rate <= 0)))}
               onClick={() => {
                 const r = paying;
                 setPaying(null);
@@ -496,7 +507,10 @@ export function ShareChecklist({
                     method,
                     cur,
                     undefined,
-                    isPartial ? Math.round(Number(partialAmount) * 100 * (cur === "VES" ? 1 / rate : cur === "EUR" ? rates.bcvEur / rate : 1)) : undefined,
+                    undefined,
+                    isPartial ? partialCents ?? undefined : undefined,
+                    isPartial && cur === "VES" ? paidRateSource : undefined,
+                    isPartial && cur === "VES" && paidRateSource === "custom" ? paidRate : undefined,
                   );
                   toast(
                     x.ok ? isPartial ? `Abono de ${r.name} anotado ✅` : `¡Listo! ${r.name} quedó al día ✅` : x.error,

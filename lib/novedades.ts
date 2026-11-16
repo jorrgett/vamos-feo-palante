@@ -13,6 +13,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-15.3",
+    date: "2026-11-15",
+    emoji: "💱",
+    title: "Abona en la moneda que recibiste",
+    items: [
+      { emoji: "🇻🇪", text: "Al abonar puedes escribir el monto real en bolívares, dólares, euros o USDT. En bolívares eliges BCV $, BCV €, Binance o una tasa propia." },
+      { emoji: "🧾", text: "La app convierte cada abono a la moneda de la salida, descuenta solo esa deuda y deja guardadas la moneda, el monto recibido y la tasa usada." },
+      { emoji: "🤝", text: "Al registrar un pago recibido también puedes elegir moneda y método compatibles. Pilas entiende esos montos y tasas al preparar pagos por fuera de la app." },
+    ],
+  },
+  {
     id: "2026-11-15.2",
     date: "2026-11-15",
     emoji: "🪙",

@@ -1,6 +1,6 @@
 // Pruebas de la lógica de dinero: npx tsx scripts/probar-logica.ts
 import assert from "node:assert/strict";
-import { allocate, fmt, parseAmount, toUsdCents } from "../lib/money";
+import { allocate, fmt, parseAmount, toUsdCents, fromUsdCents } from "../lib/money";
 import { computeSplit } from "../lib/split";
 import { computeBalances, pairwiseDebts, simplifyDebts } from "../lib/balances";
 import { casheaSchedule, cuotasLabel, inClubDays, installmentStatus, mirrorForDebtor, mirrorStatus, reconcileCuotas } from "../lib/cashea";
@@ -47,6 +47,27 @@ t("conversión Bs→USD con tasa BCV", () => {
   assert.equal(toUsdCents(3520464, "VES", { vesPerUsd: 880.1159 }), 4000);
   // €10 con EUR 985,73 y USD 880,12 ≈ $11,20
   assert.equal(toUsdCents(1000, "EUR", { vesPerUsd: 880.1159, vesPerEur: 985.729808 }), 1120);
+});
+
+t("abonos en Bs usan la tasa realmente recibida", () => {
+  assert.equal(toUsdCents(parseAmount("1.500,00")!, "VES", { vesPerUsd: 300 }), 500);
+  assert.equal(toUsdCents(parseAmount("1.500,00")!, "VES", { vesPerUsd: 375 }), 400);
+  assert.equal(toUsdCents(parseAmount("1.500,00")!, "VES", { vesPerUsd: 500 }), 300);
+  assert.equal(fromUsdCents(300, "VES", { vesPerUsd: 500 }), 150000);
+});
+
+t("abonos en USD, EUR y USDT conservan la moneda y tasa de la salida", () => {
+  assert.equal(toUsdCents(parseAmount("7,25")!, "USD", { vesPerUsd: 500 }), 725);
+  assert.equal(toUsdCents(parseAmount("7,25")!, "USDT", { vesPerUsd: 500, vesPerUsdt: 530 }), 725);
+  // €5 a Bs 600/EUR, con salida configurada en Bs 500/USD = $6.
+  assert.equal(toUsdCents(parseAmount("5,00")!, "EUR", { vesPerUsd: 500, vesPerEur: 600 }), 600);
+});
+
+t("un abono convertido descuenta solo su equivalente y preserva el resto", () => {
+  const e = { payers: [{ memberId: "a", amountUsd: 10000 }], shares: [{ memberId: "a", amountUsd: 5000 }, { memberId: "b", amountUsd: 5000 }] };
+  const paidUsd = toUsdCents(parseAmount("1.500,00")!, "VES", { vesPerUsd: 300 });
+  assert.equal(paidUsd, 500);
+  assert.equal(remainingTo(e, [{ fromMember: "b", toMember: "a", amountUsd: paidUsd }], "b", "a"), 4500);
 });
 
 t("split igual + servicio 10 %", () => {

@@ -13,7 +13,7 @@ import { ProofAiLine } from "@/components/proof";
 import { Avatar, Button, EmptyState, useToast } from "@/components/ui";
 import { cuotasLabel, dueLabel } from "@/lib/cashea";
 import { prettyDay } from "@/lib/dates";
-import { fmt, fmtNumber, type Currency } from "@/lib/money";
+import { fmt, fmtNumber, parseAmount, toUsdCents, fromUsdCents, type Currency } from "@/lib/money";
 import { amountForBank, bankCode, docParts, pagoMovilBlock, phoneForBank } from "@/lib/pago-movil";
 import { PAY_METHODS } from "@/lib/constants";
 import { RATE_META, vesPerUsd, type RateSourceId } from "@/lib/rates-shared";
@@ -32,6 +32,8 @@ export type Creditor = {
     date: string;
     remainingUsd: number;
     rateSource: string;
+    fxSource: string;
+    customRate: number | null;
     /** Si se paga por cuotas de Cashea: la próxima (por defecto se paga esa). */
     cuota?: { n: number; count: number; dueDate: string; daysLeft: number; payUsd: number; pending: { n: number; dueDate: string; daysLeft: number; restUsd: number }[] } | null;
     /** Si se anotó en bolívares: la tasa de ese día. */
@@ -58,7 +60,13 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
     if (salida && cc.items.some((i) => i.salidaId === salida)) return [salida];
     return abono ? (cc.items.length === 1 && !cc.items[0].cuota ? [cc.items[0].salidaId] : []) : cc.items.map((i) => i.salidaId);
   });
-  const [abonoUsd, setAbonoUsd] = useState("");
+  const [abonoAmount, setAbonoAmount] = useState("");
+  const [abonoCurrency, setAbonoCurrency] = useState<Currency>("USD");
+  const [abonoRateSource, setAbonoRateSource] = useState<RateSourceId | "custom">(() => {
+    const item = c?.items.find((i) => i.salidaId === (salida ?? c.items[0]?.salidaId));
+    return item?.fxSource === "custom" ? "custom" : (item?.fxSource as RateSourceId) || "bcv";
+  });
+  const [abonoCustomRate, setAbonoCustomRate] = useState(() => String(c?.items.find((i) => i.salidaId === (salida ?? c.items[0]?.salidaId))?.customRate ?? ""));
   const [method, setMethod] = useState<string | null>(null);
   const [reference, setReference] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
@@ -85,27 +93,33 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
     if (cur.includes(n) && cur.length === 1) return;
     setCuotaPicks((x) => ({ ...x, [i.salidaId]: cur.includes(n) ? cur.filter((y) => y !== n) : [...cur, n] }));
   };
-  const amountOf = (i: Item) => abonoMode ? Math.round((Number(abonoUsd) || 0) * 100) : i.cuota ? i.cuota.pending.filter((p) => cuotasOf(i).includes(p.n)).reduce((a, p) => a + p.restUsd, 0) : i.remainingUsd;
   const selected = c?.items.filter((i) => picked.includes(i.salidaId)) ?? [];
   const selectedItem = selected[0];
-  const partialAmountUsd = abonoMode && selectedItem ? amountOf(selectedItem) : undefined;
+  const outingRate = selectedItem ? (selectedItem.fxSource === "custom" ? selectedItem.customRate ?? rates.bcvUsd : vesPerUsd(rates, selectedItem.fxSource as RateSourceId)) : rates.bcvUsd;
+  const parsedAbono = parseAmount(abonoAmount);
+  const abonoRate = abonoRateSource === "custom" ? (parseAmount(abonoCustomRate) ?? 0) / 100 : vesPerUsd(rates, abonoRateSource);
+  const partialAmountUsd = abonoMode && parsedAbono != null && parsedAbono > 0
+    ? toUsdCents(parsedAbono, abonoCurrency, { vesPerUsd: abonoCurrency === "VES" ? abonoRate : outingRate, vesPerEur: rates.bcvEur, vesPerUsdt: rates.usdt })
+    : 0;
+  const amountOf = (i: Item) => abonoMode ? partialAmountUsd : i.cuota ? i.cuota.pending.filter((p) => cuotasOf(i).includes(p.n)).reduce((a, p) => a + p.restUsd, 0) : i.remainingUsd;
+  const itemRate = (i: Item) => i.fxSource === "custom" ? (i.customRate ?? rates.bcvUsd) : vesPerUsd(rates, i.fxSource as RateSourceId);
   const usd = selected.reduce((a, i) => a + amountOf(i), 0);
-  const ves = selected.reduce((a, i) => a + Math.round(amountOf(i) * vesPerUsd(rates, i.rateSource as RateSourceId)), 0);
+  const ves = selected.reduce((a, i) => a + Math.round(amountOf(i) * itemRate(i)), 0);
   // Salidas anotadas en Bs a otra tasa: se le explica por qué el monto no es el de cuando se anotó.
   const moved = selected
     .filter((i) => i.registeredRate)
-    .map((i) => ({ title: i.title, then: Math.round(amountOf(i) * i.registeredRate!), now: Math.round(amountOf(i) * vesPerUsd(rates, i.rateSource as RateSourceId)) }))
+    .map((i) => ({ title: i.title, then: Math.round(amountOf(i) * i.registeredRate!), now: Math.round(amountOf(i) * itemRate(i)) }))
     .filter((x) => Math.abs(x.now - x.then) > 100);
   /** Las cuotas que se pagan de cada salida por cuotas. */
   const cuotas = Object.fromEntries(selected.filter((i) => i.cuota).map((i) => [i.salidaId, cuotasOf(i)]));
-  const rateLabel = [...new Set(selected.map((i) => RATE_META[i.rateSource as RateSourceId]?.short ?? "BCV $"))].join(" / ");
+  const rateLabel = [...new Set(selected.map((i) => i.fxSource === "custom" ? "tasa propia" : RATE_META[i.fxSource as RateSourceId]?.short ?? "BCV $"))].join(" / ");
 
   const pm = c?.payInfo.pagoMovil ?? {};
   const methods: Method[] = (() => {
-    if (abonoMode) return PAY_METHODS.map((m) => ({
+    if (abonoMode) return PAY_METHODS.filter((m) => m.currency === abonoCurrency || m.id === "otro").map((m) => ({
       id: m.id,
       label: `${m.emoji} ${m.label}`,
-      currency: m.currency,
+      currency: m.id === "otro" ? abonoCurrency : m.currency,
       needsRef: ["pago_movil", "punto", "zelle", "binance", "tarjeta"].includes(m.id),
     }));
     const m: Method[] = [];
@@ -117,21 +131,30 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
     return m;
   })();
   const chosen = methods.find((m) => m.id === method);
-  const amountIn = (cur: Currency) => cur === "VES" ? ves : cur === "EUR" ? Math.round(usd * rates.bcvUsd / rates.bcvEur) : usd;
+  const amountIn = (cur: Currency) => abonoMode && cur === abonoCurrency
+    ? (parsedAbono ?? 0)
+    : cur === "VES" ? ves : cur === "EUR" ? Math.round(usd * outingRate / rates.bcvEur) : usd;
 
   const changePayMode = (partial: boolean) => {
     setAbonoMode(partial);
-    setAbonoUsd("");
-    setPicked((current) => {
-      if (!c) return current;
-      if (partial) {
-        const initial = salida && c.items.some((i) => i.salidaId === salida && !i.cuota)
-          ? salida
-          : current.find((id) => c.items.some((i) => i.salidaId === id && !i.cuota));
-        return initial ? [initial] : c.items.length === 1 && !c.items[0].cuota ? [c.items[0].salidaId] : [];
+    setAbonoAmount("");
+    if (!c) return;
+    let nextPicked: string[];
+    if (partial) {
+      const initial = salida && c.items.some((i) => i.salidaId === salida && !i.cuota)
+        ? salida
+        : picked.find((id) => c.items.some((i) => i.salidaId === id && !i.cuota));
+      const target = initial ?? (c.items.length === 1 && !c.items[0].cuota ? c.items[0].salidaId : undefined);
+      nextPicked = target ? [target] : [];
+      const item = c.items.find((i) => i.salidaId === target);
+      if (item) {
+        setAbonoRateSource(item.fxSource === "custom" ? "custom" : (item.fxSource as RateSourceId));
+        setAbonoCustomRate(item.customRate ? String(item.customRate) : "");
       }
-      return salida && c.items.some((i) => i.salidaId === salida) ? [salida] : c.items.map((i) => i.salidaId);
-    });
+    } else {
+      nextPicked = salida && c.items.some((i) => i.salidaId === salida) ? [salida] : c.items.map((i) => i.salidaId);
+    }
+    setPicked(nextPicked);
     setMethod(null);
     setReference("");
     if (proof) URL.revokeObjectURL(proof.preview);
@@ -146,7 +169,7 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
         const blob = await compressImage(file, 1600, 0.85);
         const fd = new FormData();
         fd.append("foto", blob, "comprobante.jpg");
-        fd.append("pago", JSON.stringify({ toUserId: c.userId, salidaIds: picked, method: chosen.id, currency: chosen.currency, cuotas, amountUsd: partialAmountUsd }));
+        fd.append("pago", JSON.stringify({ toUserId: c.userId, salidaIds: picked, method: chosen.id, currency: chosen.currency, cuotas, ...(abonoMode ? { paymentAmount: parsedAbono, ...(abonoCurrency === "VES" ? { paymentRateSource: abonoRateSource, ...(abonoRateSource === "custom" ? { paymentRate: abonoRate } : {}) } : {}) } : {}) }));
         const r = await attachProof(fd);
         if (!r.ok) return toast(r.error, "error");
         if (proof) URL.revokeObjectURL(proof.preview);
@@ -212,6 +235,11 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
               onClick={() => {
                 setTo(x.userId);
                 setPicked(abonoMode ? (x.items.length === 1 && !x.items[0].cuota ? [x.items[0].salidaId] : []) : x.items.map((i) => i.salidaId));
+                const initialItem = x.items.find((i) => i.salidaId === salida) ?? x.items[0];
+                if (initialItem) {
+                  setAbonoRateSource(initialItem.fxSource === "custom" ? "custom" : (initialItem.fxSource as RateSourceId));
+                  setAbonoCustomRate(initialItem.customRate ? String(initialItem.customRate) : "");
+                }
                 setMethod(null);
                 setStep(1);
               }}
@@ -252,7 +280,9 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
                       if (abonoMode) {
                         if (i.cuota) return;
                         setPicked([i.salidaId]);
-                        setAbonoUsd("");
+                        setAbonoAmount("");
+                        setAbonoRateSource(i.fxSource === "custom" ? "custom" : (i.fxSource as RateSourceId));
+                        setAbonoCustomRate(i.customRate ? String(i.customRate) : "");
                       } else {
                         setPicked((p) => (on ? p.filter((x) => x !== i.salidaId) : [...p, i.salidaId]));
                       }
@@ -317,12 +347,30 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
             <div className="mt-4 rounded-2xl border-2 border-line p-4">
               <p className="text-xs font-semibold text-muted">Saldo pendiente en esta salida</p>
               <p className="num mt-1 text-xl font-bold">{fmt(selectedItem.remainingUsd, "USD")}</p>
-              <label className="label mt-4 block" htmlFor="abono-usd">¿Cuánto vas a abonar?</label>
-              <div className="mt-2 flex items-center gap-2">
-                <span className="text-lg font-bold">$</span>
-                <input id="abono-usd" className="field num" type="number" inputMode="decimal" min="0.01" max={(selectedItem.remainingUsd / 100).toFixed(2)} step="0.01" placeholder="Ej. 5,00" value={abonoUsd} onChange={(e) => setAbonoUsd(e.target.value)} />
+              <div className="mt-4 flex flex-wrap gap-2" aria-label="Moneda del abono">
+                {(["USD", "VES", "EUR", "USDT"] as Currency[]).map((cur) => <button key={cur} type="button" aria-pressed={abonoCurrency === cur} onClick={() => {
+                  if (parsedAbono != null && parsedAbono > 0) {
+                    const usdValue = toUsdCents(parsedAbono, abonoCurrency, { vesPerUsd: abonoCurrency === "VES" ? abonoRate : outingRate, vesPerEur: rates.bcvEur, vesPerUsdt: rates.usdt });
+                    const next = fromUsdCents(usdValue, cur, { vesPerUsd: cur === "VES" ? abonoRate : outingRate, vesPerEur: rates.bcvEur, vesPerUsdt: rates.usdt });
+                    setAbonoAmount((next / 100).toFixed(2));
+                  }
+                  setAbonoCurrency(cur); setMethod(null);
+                }} className={clsx("rounded-full border-2 px-3 py-1.5 text-sm font-bold", abonoCurrency === cur ? "border-mint bg-mint-soft" : "border-line")}>{cur === "VES" ? "Bs" : cur === "USD" ? "$" : cur === "EUR" ? "€" : "USDT"}</button>)}
               </div>
-              <p className="mt-1 text-xs text-muted">Escribe cuánto abonaste. No puede superar el saldo pendiente.</p>
+              {abonoCurrency === "VES" && <div className="mt-3 space-y-2">
+                <label className="label block" htmlFor="abono-rate">Tasa para convertir ese abono (Bs por $)</label>
+                <select id="abono-rate-source" className="field" value={abonoRateSource} onChange={(e) => { setAbonoRateSource(e.target.value as RateSourceId | "custom"); setMethod(null); }}>
+                  <option value="bcv">BCV $ · {fmtNumber(vesPerUsd(rates, "bcv"))}</option><option value="usdt">USDT · {fmtNumber(vesPerUsd(rates, "usdt"))}</option><option value="eur">BCV € · tasa equivalente {fmtNumber(vesPerUsd(rates, "eur"))}</option><option value="custom">Otra tasa</option>
+                </select>
+                {abonoRateSource === "custom" && <input id="abono-rate" className="field num" type="text" inputMode="decimal" placeholder="Bs por cada $" value={abonoCustomRate} onChange={(e) => setAbonoCustomRate(e.target.value)} />}
+                <p className="text-xs text-muted">La deuda se descuenta usando esta tasa; la salida queda guardada en su tasa original.</p>
+              </div>}
+              <label className="label mt-4 block" htmlFor="abono-amount">¿Cuánto vas a abonar? · {abonoCurrency === "VES" ? "Bs" : abonoCurrency}</label>
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-lg font-bold">{abonoCurrency === "VES" ? "Bs" : abonoCurrency === "EUR" ? "€" : abonoCurrency === "USDT" ? "₮" : "$"}</span>
+                <input id="abono-amount" className="field num" type="text" inputMode="decimal" placeholder={abonoCurrency === "VES" ? "Ej. 1.500,00" : "Ej. 5,00"} value={abonoAmount} onChange={(e) => setAbonoAmount(e.target.value)} />
+              </div>
+              <p className="mt-1 text-xs text-muted">Equivale a <b className="num">{fmt(partialAmountUsd, "USD")}</b>. No puede superar el saldo pendiente.</p>
               {selectedItem.cuota && <p className="mt-2 text-xs font-semibold text-rose">Esta salida usa Cashea: elige las cuotas que pagas desde el flujo normal.</p>}
               {amountOf(selectedItem) > selectedItem.remainingUsd && <p className="mt-2 text-xs font-semibold text-rose">El abono no puede ser mayor que lo pendiente.</p>}
             </div>
@@ -331,7 +379,7 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
             <p className="text-xs font-bold opacity-70">{abonoMode ? "Monto del abono" : "Total a pagar"}</p>
             <p className="num text-3xl font-bold">{fmt(usd, "USD")}</p>
             <p className="num text-sm opacity-80">
-              {fmt(ves, "VES")} a {rateLabel || "BCV $"} de hoy
+              {abonoMode ? `${fmt(parsedAbono ?? 0, abonoCurrency)} recibidos · equivale a ${fmt(partialAmountUsd, "USD")}${abonoCurrency === "VES" ? ` · ${abonoRateSource === "custom" ? "tasa propia" : RATE_META[abonoRateSource].short} ${fmtNumber(abonoRate)}` : ""}` : `${fmt(ves, "VES")} a ${rateLabel || "BCV $"} de hoy`}
             </p>
           </div>
           {moved.length > 0 && (
@@ -417,18 +465,18 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
                         ["banco", "🏦 Banco", pm.banco, bankCode(pm.banco)],
                         ["tel", "📲 Teléfono", pm.telefono && phoneForBank(pm.telefono), phoneForBank(pm.telefono)],
                         ["ci", `🪪 Cédula ${docParts(pm.cedula).letter}`, pm.cedula && docParts(pm.cedula).number, docParts(pm.cedula).number],
-                        ["monto", "💰 Monto en Bs", fmtNumber(ves / 100), amountForBank(ves)],
+                        ["monto", "💰 Monto en Bs", fmtNumber(amountIn("VES") / 100), amountForBank(amountIn("VES"))],
                       ]
                     : chosen.id === "zelle"
                       ? [
                           ["zelle", "⚡ Zelle", c.payInfo.zelle, c.payInfo.zelle?.trim()],
                           // Zelle y Binance usan punto decimal.
-                          ["monto", "💰 Monto en $", fmtNumber(usd / 100), (usd / 100).toFixed(2)],
+                          ["monto", "💰 Monto en $", fmtNumber(amountIn("USD") / 100), (amountIn("USD") / 100).toFixed(2)],
                         ]
                       : chosen.id === "binance"
                         ? [
                             ["binance", "🟡 Binance Pay ID / correo", c.payInfo.binance, c.payInfo.binance?.trim()],
-                            ["monto", "💰 Monto en USDT", fmtNumber(usd / 100), (usd / 100).toFixed(2)],
+                            ["monto", "💰 Monto en USDT", fmtNumber(amountIn("USDT") / 100), (amountIn("USDT") / 100).toFixed(2)],
                           ]
                         : [["monto", `💰 Monto en ${chosen.currency === "VES" ? "Bs" : chosen.currency === "EUR" ? "€" : chosen.currency === "USDT" ? "USDT" : "$"}`, fmtNumber(amountIn(chosen.currency) / 100), amountForBank(amountIn(chosen.currency))]]) as [string, string, string | undefined, string | undefined][]
                 )
@@ -448,7 +496,7 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
               {chosen.id === "pago_movil" && (
                 <Button
                   className="mt-3 w-full"
-                  onClick={() => copy("todo", pagoMovilBlock(pm, ves))}
+                  onClick={() => copy("todo", pagoMovilBlock(pm, amountIn("VES")))}
                 >
                   {copied === "todo" ? <Check size={16} /> : <Copy size={16} />} Copiar todo
                 </Button>
@@ -462,7 +510,9 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
                       ? "Abre la app de tu banco, haz el pago y vuelve aquí para anotarlo."
                       : "Haz el pago por este medio y vuelve aquí para anotarlo."}{" "}
                 {chosen.id === "pago_movil" && "Se copia sin puntos, guiones ni letras, como lo piden los bancos."}{" "}
-                {chosen.currency === "VES" && `Monto calculado a ${rateLabel || "BCV $"} de hoy.`}
+                {chosen.currency === "VES" && (abonoMode
+                  ? `Recibes exactamente ${fmt(amountIn("VES"), "VES")} a ${abonoRateSource === "custom" ? "tasa propia" : RATE_META[abonoRateSource].short} ${fmtNumber(abonoRate)} por dólar.`
+                  : `Monto calculado a ${rateLabel || "BCV $"} de hoy.`)}
               </p>
             </motion.div>
           )}
@@ -520,10 +570,10 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
             size="lg"
             className="w-full"
             loading={pending}
-            disabled={abonoMode && (!selected[0] || amountOf(selected[0]) <= 0 || amountOf(selected[0]) > selected[0].remainingUsd || !!selected[0].cuota)}
+            disabled={abonoMode && (!selected[0] || amountOf(selected[0]) <= 0 || amountOf(selected[0]) > selected[0].remainingUsd || !!selected[0].cuota || (abonoCurrency === "VES" && (!Number.isFinite(abonoRate) || abonoRate <= 0)))}
             onClick={() =>
               start(async () => {
-                const r = await payDebts({ toUserId: c.userId, salidaIds: picked, method: chosen.id, currency: chosen.currency, reference: reference || undefined, proofId: proof?.id, cuotas, amountUsd: partialAmountUsd });
+                const r = await payDebts({ toUserId: c.userId, salidaIds: picked, method: chosen.id, currency: chosen.currency, reference: reference || undefined, proofId: proof?.id, cuotas, ...(abonoMode ? { paymentAmount: parsedAbono!, ...(abonoCurrency === "VES" ? { paymentRateSource: abonoRateSource, ...(abonoRateSource === "custom" ? { paymentRate: abonoRate } : {}) } : {}) } : {}) });
                 if (r.ok) setDone({ amount: r.amount, currency: chosen.currency, name: c.name, isAbono: abonoMode });
                 else toast(r.error, "error");
               })
@@ -546,7 +596,7 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
           )}
           <span className="flex-1" />
           {step === 1 && (
-            <Button disabled={!picked.length || (abonoMode && (!selectedItem || amountOf(selectedItem) <= 0 || amountOf(selectedItem) > selectedItem.remainingUsd || !!selectedItem.cuota))} onClick={() => setStep(2)}>
+            <Button disabled={!picked.length || (abonoMode && (!selectedItem || amountOf(selectedItem) <= 0 || amountOf(selectedItem) > selectedItem.remainingUsd || !!selectedItem.cuota || (abonoCurrency === "VES" && (!Number.isFinite(abonoRate) || abonoRate <= 0))))} onClick={() => setStep(2)}>
               Siguiente <ArrowRight size={16} />
             </Button>
           )}

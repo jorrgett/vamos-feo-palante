@@ -258,7 +258,7 @@ export default async function AdminSalida({ params, searchParams }: { params: Pr
         {!me.userId && <p className="mt-2 text-xs opacity-75">👻 No tiene cuenta: así se vería si la tuviera.</p>}
       </section>
 
-      <ShareChecklist salidaId={id} groupRate={ledger.group.rateSource as RateSourceId} rows={rows} closed={closed} readOnly />
+      <ShareChecklist salidaId={id} groupRate={ledger.group.rateSource as RateSourceId} fxSource={e.fx.source} customRate={e.fx.vesPerUsd} rows={rows} closed={closed} readOnly />
 
       <section className="card p-5">
         <h2 className="display mb-3 text-lg font-bold">Pagos anotados</h2>

@@ -442,12 +442,13 @@ export async function setSalidaClosed(salidaId: string, closed: boolean): Promis
 }
 
 /** Marca que alguien ya pagó su parte. Si lo marca el que cobra, queda confirmado; si no, queda por confirmar. */
-export async function markSharePaid(salidaId: string, memberId: string, method: string, currency: Currency, reference?: string, amountUsd?: number): Promise<ActionResult> {
+export async function markSharePaid(salidaId: string, memberId: string, method: string, currency: Currency, reference?: string, amountUsd?: number, paymentAmount?: number, paymentRateSource?: RateSourceId | "custom", paymentRate?: number): Promise<ActionResult> {
   const user = await requireUser();
   const ledger = await getLedger(salidaId, user.id);
   const e = ledger?.expenses[0];
   if (!ledger || !e) return { ok: false, error: "No encontré esa salida." };
   if (!PAY_METHODS.some((m) => m.id === method)) method = "otro";
+  if (paymentAmount != null && method !== "otro" && PAY_METHODS.find((m) => m.id === method)?.currency !== currency) return { ok: false, error: "El método de pago y la moneda recibida no coinciden." };
   const partsForMember = debtSplit(eLikeOf(e), memberId);
   const canCollect = partsForMember.some((part) => part.to === ledger.me.id);
   const isCreator = ledger.group.createdBy === user.id;
@@ -455,13 +456,22 @@ export async function markSharePaid(salidaId: string, memberId: string, method: 
   const eLike = eLikeOf(e);
   const linked = linkedOf(ledger, e.id);
   const rates = await getRates();
-  const rate = vesPerUsd(rates, ledger.group.rateSource as RateSourceId);
+  const rate = e.fx.source === "custom" ? e.fx.vesPerUsd : vesPerUsd(rates, e.fx.source as RateSourceId);
+  const defaultRateSource = e.fx.source;
+  const paidRateSource = paymentRateSource ?? e.fx.source;
+  const paidRate = paidRateSource === "custom" ? (paymentRate ?? e.fx.vesPerUsd) : vesPerUsd(rates, paidRateSource as RateSourceId);
+  if (paymentAmount != null && (!Number.isSafeInteger(paymentAmount) || paymentAmount <= 0)) return { ok: false, error: "Pon un monto mayor que cero." };
+  if (paymentAmount != null && amountUsd != null) return { ok: false, error: "El monto debe indicarse en una sola moneda." };
+  if (paymentAmount != null && currency === "VES" && (!paidRate || !Number.isFinite(paidRate) || paidRate <= 0)) return { ok: false, error: "Indica una tasa válida en bolívares por dólar." };
   if (amountUsd != null && (!Number.isSafeInteger(amountUsd) || amountUsd <= 0)) return { ok: false, error: "Pon un monto mayor que cero." };
   const outstanding = debtSplit(eLike, memberId).map((part) => ({ ...part, rest: remainingTo(eLike, linked, memberId, part.to) })).filter((part) => part.rest > 0);
   const remainingUsd = outstanding.reduce((sum, part) => sum + part.rest, 0);
-  const paymentUsd = amountUsd ?? remainingUsd;
+  const paymentUsd = paymentAmount != null
+    ? toUsdCents(paymentAmount, currency, { vesPerUsd: currency === "VES" ? paidRate! : rate, vesPerEur: rates.bcvEur, vesPerUsdt: rates.usdt })
+    : amountUsd ?? remainingUsd;
   if (paymentUsd <= 0 || paymentUsd > remainingUsd) return { ok: false, error: `El abono no puede pasar de lo pendiente (${fmt(remainingUsd, "USD")}).` };
   const portions = paymentUsd === remainingUsd ? outstanding.map((part) => part.rest) : allocate(paymentUsd, outstanding.map((part) => part.rest));
+  const rawPortions = paymentAmount != null ? allocate(paymentAmount, portions) : null;
   const batchId = randomUUID();
   const rows: (typeof schema.settlements.$inferInsert)[] = [];
   for (const [i, part] of outstanding.entries()) {
@@ -474,10 +484,10 @@ export async function markSharePaid(salidaId: string, memberId: string, method: 
       fromMember: memberId,
       toMember: part.to,
       currency,
-      amount: currency === "VES" ? Math.round(paidUsd * rate) : currency === "EUR" ? Math.round((paidUsd * rate) / rates.bcvEur) : paidUsd,
+      amount: rawPortions?.[i] ?? (currency === "VES" ? Math.round(paidUsd * rate) : currency === "EUR" ? Math.round((paidUsd * rates.bcvUsd) / rates.bcvEur) : paidUsd),
       amountUsd: paidUsd,
-      rate: currency === "VES" ? rate : null,
-      rateSource: currency === "VES" ? ledger.group.rateSource : null,
+      rate: currency === "VES" ? (paymentAmount != null ? paidRate! : rate) : null,
+      rateSource: currency === "VES" ? (paymentAmount != null ? paidRateSource : defaultRateSource) : null,
       method,
       reference: reference?.trim().slice(0, 40) || null,
       note: `${paymentUsd < remainingUsd ? "Abono" : "Su parte"} de «${e.title}»`.slice(0, 140),
@@ -635,7 +645,16 @@ const paySchema = z.object({
   cuotas: z.record(z.string().uuid(), z.array(z.number().int().min(0).max(60)).min(1).max(61)).optional(),
   /** Abono expresado en centavos de USD, solo para una salida concreta y sin cuotas Cashea. */
   amountUsd: z.number().int().min(1).max(1e13).optional(),
-}).refine((d) => d.amountUsd == null || d.salidaIds.length === 1, { message: "Los abonos se anotan en una sola salida." });
+  /** Monto exacto recibido en la moneda elegida para el abono, en centavos. */
+  paymentAmount: z.number().int().min(1).max(1e13).optional(),
+  paymentRateSource: z.enum(["bcv", "usdt", "eur", "custom"]).optional(),
+  /** Bolívares por dólar cuando la tasa elegida es propia. */
+  paymentRate: z.number().positive().max(1e9).optional(),
+})
+  .refine((d) => (d.amountUsd == null && d.paymentAmount == null) || d.salidaIds.length === 1, { message: "Los abonos se anotan en una sola salida." })
+  .refine((d) => !(d.amountUsd != null && d.paymentAmount != null), { message: "Elige el monto en una sola moneda." })
+  .refine((d) => d.paymentRateSource !== "custom" || (d.currency === "VES" && !!d.paymentRate), { message: "Indica la tasa propia en Bs por dólar." })
+  .refine((d) => !d.paymentAmount || d.method === "otro" || PAY_METHODS.find((m) => m.id === d.method)?.currency === d.currency, { message: "El método y la moneda del abono no coinciden." });
 export type PayInput = z.input<typeof paySchema>;
 
 type PayRow = typeof schema.settlements.$inferInsert;
@@ -661,23 +680,39 @@ async function buildPayRows(userId: string, d: z.infer<typeof paySchema>, batchI
     const plan = casheaPlanOf(ledger);
     const mirror = plan?.memberId === creditor.id ? mirrorForDebtor(plan, eLikeOf(e), linked, ledger.me.id) : null;
     const wanted = d.cuotas?.[sid];
-    if (d.amountUsd != null && mirror) {
+    const partialRateSource = d.paymentRateSource ?? e.fx.source;
+    const partialRate = partialRateSource === "custom" ? (d.paymentRate ?? e.fx.vesPerUsd) : vesPerUsd(rates, partialRateSource as RateSourceId);
+    const outingRate = e.fx.source === "custom" ? e.fx.vesPerUsd : vesPerUsd(rates, e.fx.source as RateSourceId);
+    const partialUsd = d.paymentAmount != null
+      ? toUsdCents(d.paymentAmount, d.currency as Currency, {
+          vesPerUsd: d.currency === "VES" ? partialRate : outingRate,
+          vesPerEur: rates.bcvEur,
+          vesPerUsdt: rates.usdt,
+        })
+      : d.amountUsd;
+    if (partialUsd != null && mirror) {
       error = "En las salidas con Cashea, el abono se elige por cuota.";
       continue;
     }
-    if (d.amountUsd != null && d.amountUsd > owes) {
+    if (partialUsd != null && partialUsd > owes) {
       error = `El abono no puede pasar de lo pendiente en esta salida (${fmt(owes, "USD")}).`;
       continue;
     }
-    const slices: { cuotaN: number | null; usd: number }[] = mirror && wanted ? mirror.parts.filter((p) => wanted.includes(p.n) && p.restUsd > 0).map((p) => ({ cuotaN: p.n, usd: p.restUsd })) : [{ cuotaN: null, usd: d.amountUsd ?? owes }];
+    const slices: { cuotaN: number | null; usd: number }[] = mirror && wanted ? mirror.parts.filter((p) => wanted.includes(p.n) && p.restUsd > 0).map((p) => ({ cuotaN: p.n, usd: p.restUsd })) : [{ cuotaN: null, usd: partialUsd ?? owes }];
     if (slices.length === 0) continue;
-    const rate = vesPerUsd(rates, ledger.group.rateSource as RateSourceId);
+    const rate = outingRate;
+    const paidRate = d.currency === "VES" && d.paymentAmount != null ? partialRate : rate;
+    const paidRateSource = d.currency === "VES" && d.paymentAmount != null ? partialRateSource : e.fx.source;
+    const rawAmounts = d.paymentAmount != null ? allocate(d.paymentAmount, slices.map((s) => s.usd)) : null;
     titles.push(mirror && wanted ? `${e.title} (${cuotasLabel(slices.map((x) => x.cuotaN!))})` : e.title);
-    for (const { cuotaN, usd } of slices) {
-      const inEur = Math.round((usd * rates.bcvUsd) / rates.bcvEur);
-      owed.VES += Math.round(usd * rate);
-      owed.USD += usd;
-      owed.EUR += inEur;
+    for (const [sliceIndex, { cuotaN, usd }] of slices.entries()) {
+      const inEur = Math.round((usd * outingRate) / rates.bcvEur);
+      const inVes = d.paymentAmount != null && d.currency === "VES" ? rawAmounts![sliceIndex] : Math.round(usd * rate);
+      const inUsd = d.paymentAmount != null && (d.currency === "USD" || d.currency === "USDT") ? rawAmounts![sliceIndex] : usd;
+      const inExpectedEur = d.paymentAmount != null && d.currency === "EUR" ? rawAmounts![sliceIndex] : inEur;
+      owed.VES += inVes;
+      owed.USD += inUsd;
+      owed.EUR += inExpectedEur;
       rows.push({
         groupId: sid,
         expenseId: e.id,
@@ -686,10 +721,10 @@ async function buildPayRows(userId: string, d: z.infer<typeof paySchema>, batchI
         fromMember: ledger.me.id,
         toMember: creditor.id,
         currency: d.currency,
-        amount: d.currency === "VES" ? Math.round(usd * rate) : d.currency === "EUR" ? inEur : usd,
+        amount: rawAmounts?.[sliceIndex] ?? (d.currency === "VES" ? Math.round(usd * rate) : d.currency === "EUR" ? inEur : usd),
         amountUsd: usd,
-        rate: d.currency === "VES" ? rate : null,
-        rateSource: d.currency === "VES" ? ledger.group.rateSource : null,
+        rate: d.currency === "VES" ? paidRate : null,
+        rateSource: d.currency === "VES" ? paidRateSource : null,
         method: d.method,
         reference: d.reference || null,
         note: (cuotaN != null ? `Pago de ${cuotasLabel([cuotaN])} de «${e.title}»` : `Su parte de «${e.title}»`).slice(0, 140),

@@ -16,6 +16,9 @@ export type PersonItem = {
   date: string;
   remainingUsd: number;
   rateSource: string;
+  /** Fuente y tasa configuradas en la salida, para sugerir la conversión del pago. */
+  fxSource: string;
+  customRate: number | null;
   closed: boolean;
   /** Si se paga por cuotas de Cashea (espejo): la próxima cuota y cuánto hay que pagar para ponerse al día. */
   cuota?: { n: number; count: number; dueDate: string; daysLeft: number; payUsd: number; pending: PendingCuota[] } | null;
@@ -64,6 +67,8 @@ export function personBalances(bundles: Bundle[]): PersonBalance[] {
         emoji: categoryOf(e.category).emoji,
         date: ymdOf(e.spentAt),
         rateSource: ledger.group.rateSource,
+        fxSource: e.fx.source,
+        customRate: e.fx.vesPerUsd,
         closed: !!ledger.group.closedAt,
         registeredRate: e.currency === "VES" ? e.fx.vesPerUsd : null,
       };

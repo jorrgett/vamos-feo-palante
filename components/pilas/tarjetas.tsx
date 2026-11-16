@@ -265,6 +265,7 @@ function Pagado({ t, estado, onHecho }: P<"pagado">) {
         </p>
       </Persona>
       <p className="mt-2 text-right">
+        {t.montoRecibido != null && <span className="mr-2 text-sm text-muted">Recibiste {fmt(t.montoRecibido, t.moneda)}</span>}
         <Money usd={t.montoUsd} className="text-xl font-bold" />
       </p>
       {estado ? (
@@ -275,8 +276,8 @@ function Pagado({ t, estado, onHecho }: P<"pagado">) {
           loading={pending}
           onClick={() =>
             run(
-              () => (t.salidaId && t.memberId ? markSharePaid(t.salidaId, t.memberId, t.metodo, t.moneda, undefined, t.montoUsd) : markPersonPaid(t.userId!, t.metodo, t.moneda)),
-              () => onHecho({ estado: "hecho", texto: `Listo: quedó anotado el pago de ${t.persona.nombre}` }, `Tocó «Sí, ya me pagó»: quedó anotado que ${t.persona.nombre} ${t.abono ? `abonó ${fmt(t.montoUsd, "USD")} en` : "pagó"} ${t.detalle}.`),
+              () => (t.salidaId && t.memberId ? markSharePaid(t.salidaId, t.memberId, t.metodo, t.moneda, undefined, t.montoRecibido == null ? t.montoUsd : undefined, t.montoRecibido, t.fuenteTasa, t.tasaVesUsd) : markPersonPaid(t.userId!, t.metodo, t.moneda)),
+              () => onHecho({ estado: "hecho", texto: `Listo: quedó anotado el pago de ${t.persona.nombre}` }, `Tocó «Sí, ya me pagó»: quedó anotado que ${t.persona.nombre} ${t.abono ? `abonó ${t.montoRecibido != null ? fmt(t.montoRecibido, t.moneda) : fmt(t.montoUsd, "USD")} en` : "pagó"} ${t.detalle}.`),
             )
           }
         >

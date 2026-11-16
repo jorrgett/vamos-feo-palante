@@ -157,7 +157,7 @@ export default async function SalidaPage({ params }: { params: Promise<{ id: str
         </div>
       </article>
 
-      <ShareChecklist salidaId={id} groupRate={ledger.group.rateSource as RateSourceId} rows={rows} closed={closed} />
+      <ShareChecklist salidaId={id} groupRate={ledger.group.rateSource as RateSourceId} fxSource={e.fx.source} customRate={e.fx.vesPerUsd} rows={rows} closed={closed} />
 
       {payments.length > 0 && (
         <section className="card p-5">
