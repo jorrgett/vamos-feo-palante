@@ -13,6 +13,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-15.2",
+    date: "2026-11-15",
+    emoji: "🪙",
+    title: "Abonar ahora es más fácil",
+    items: [
+      { emoji: "👀", text: "Ahora ves «Abonar» desde Inicio, en el perfil de cada pana y al revisar quién pagó una salida." },
+      { emoji: "💸", text: "En el mismo flujo eliges pagar todo o abonar una parte. Para abonar, seleccionas una salida y escribes cuánto pagaste." },
+      { emoji: "✅", text: "El monto, el método y la confirmación te indican claramente cuándo estás registrando un abono. También puedes pedirle a Pilas que te lleve a ese flujo." },
+    ],
+  },
+  {
     id: "2026-11-15.1",
     date: "2026-11-15",
     emoji: "💸",

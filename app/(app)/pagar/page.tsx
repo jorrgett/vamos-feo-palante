@@ -29,8 +29,8 @@ export default async function Pagar({ searchParams }: { searchParams: Promise<{ 
   }));
   return (
     <div className="mx-auto max-w-xl">
-      <h1 className="display text-3xl font-extrabold sm:text-4xl">Pagarle a un pana 💸</h1>
-      <p className="mt-1 mb-5 text-muted">Te guío: a quién, qué le estás pagando y sus datos para pagarle. Al final le llega el aviso para que confirme.</p>
+      <h1 className="display text-3xl font-extrabold sm:text-4xl">{abono === "1" ? "Abonar a una salida 💸" : "Pagarle a un pana 💸"}</h1>
+      <p className="mt-1 mb-5 text-muted">{abono === "1" ? "Elige la salida, cuánto abonaste y el método de pago. El saldo pendiente se actualiza cuando tu pana lo confirme." : "Te guío: a quién, qué le estás pagando y sus datos para pagarle. Al final le llega el aviso para que confirme."}</p>
       <PayWizard creditors={creditors} preselect={creditors.some((c) => c.userId === a) ? a : undefined} salida={s} aiOn={aiEnabled()} payAll={todo === "1"} abono={abono === "1"} />
     </div>
   );

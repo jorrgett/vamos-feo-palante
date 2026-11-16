@@ -280,7 +280,7 @@ function QuickAdd({ variant }: { groups?: NavGroup[]; variant: "fab" | "sidebar"
   const options = [
     { href: "/pilas", icon: BatteryCharging, title: "Pídeselo a Pilas", sub: "Escríbelo como a un pana: «anota que ayer pagué 30$ de pizza con Ana y Luis»", tint: "var(--violet)" },
     { href: "/salidas/nueva", icon: Receipt, title: "Anotar una salida", sub: "Fuimos a comer, a tomar, a la playa… y alguien puso la plata", tint: "var(--mango)" },
-    { href: "/pagar", icon: HandCoins, title: "Pagarle a un pana", sub: "Te muestro sus datos y cuánto le debes", tint: "var(--mint)" },
+    { href: "/pagar", icon: HandCoins, title: "Pagar o abonar", sub: "Paga todo o una parte de una salida", tint: "var(--mint)" },
     { href: "/panas#invitar", icon: UserPlus, title: "Invitar a un pana", sub: "Mándale el link para que entre", tint: "var(--violet)" },
     { href: "/calculadora", icon: Calculator, title: "Calculadora rápida", sub: "Dividir sin anotar nada", tint: "var(--sky)" },
   ];

@@ -207,7 +207,7 @@ export const HERRAMIENTAS: Anthropic.Beta.BetaTool[] = [
   },
   {
     name: "mostrar_boton",
-    description: "Botón para abrir una pantalla de la app. Úsalo para pagar (ahí están los datos para copiar), ver una salida, el formulario completo, Cashea, tasas, perfil, invitar, etc.",
+    description: "Botón para abrir una pantalla de la app. Úsalo para pagar completo o abonar (en el flujo se elige pagar todo o una parte), ver una salida, el formulario completo, Cashea, tasas, perfil, invitar, etc. Si pidió abonar, pasa abono=true; si sabes la salida, pásala también.",
     input_schema: S(
       {
         destino: {
@@ -216,6 +216,7 @@ export const HERRAMIENTAS: Anthropic.Beta.BetaTool[] = [
         },
         pana: str("Para «pagar» o «pana»."),
         salida: str("Para «salida», «editar_salida» o «pagar» una salida."),
+        abono: { type: "boolean", description: "True para abrir el flujo en modo abono parcial." },
         texto: str("Texto del botón (opcional)."),
       },
       ["destino"],
@@ -596,11 +597,11 @@ function proponerConfirmar(raw: unknown, ctx: PilasCtx): Resultado {
 }
 
 function mostrarBoton(raw: unknown, ctx: PilasCtx): Resultado {
-  const i = z.object({ destino: z.string(), pana: z.string().optional(), salida: z.string().optional(), texto: z.string().max(40).optional() }).parse(raw);
+  const i = z.object({ destino: z.string(), pana: z.string().optional(), salida: z.string().optional(), abono: z.boolean().optional(), texto: z.string().max(40).optional() }).parse(raw);
   const p = i.pana ? buscarPana(ctx, i.pana) : null;
   const s = i.salida ? buscarSalida(ctx, i.salida).ledger.group.id : null;
   const R: Record<string, [string, string, string] | null> = {
-    pagar: [p && !p.isMe ? `/pagar?a=${p.id}${s ? `&s=${s}` : ""}` : "/pagar", p && !p.isMe ? `Pagarle a ${p.name}` : "Pagar", "💸"],
+    pagar: [p && !p.isMe ? `/pagar?a=${p.id}${s ? `&s=${s}` : ""}${i.abono ? "&abono=1" : ""}` : i.abono ? "/pagar?abono=1" : "/pagar", p && !p.isMe ? (i.abono ? `Abonar a ${p.name}` : `Pagarle a ${p.name}`) : i.abono ? "Abonar" : "Pagar", "💸"],
     salida: s ? [`/salidas/${s}`, "Ver la salida", "🧾"] : null,
     editar_salida: s ? [`/salidas/${s}/editar`, "Editar la salida", "✏️"] : null,
     nueva_salida: ["/salidas/nueva", "Anotar en el formulario", "📝"],

@@ -361,8 +361,8 @@ export function ShareChecklist({
                             <Link href={`/pagar?a=${r.creditorUserId ?? ""}&s=${salidaId}`} className="btn-pop h-9 px-3.5 text-sm">
                               Pagar mi parte
                             </Link>
-                            <Link href={`/pagar?a=${r.creditorUserId ?? ""}&s=${salidaId}&abono=1`} className="rounded-full px-2.5 py-1.5 text-xs font-semibold text-muted hover:text-text">
-                              Abonar
+                            <Link href={`/pagar?a=${r.creditorUserId ?? ""}&s=${salidaId}&abono=1`} className="inline-flex h-9 items-center rounded-full border-2 border-mint px-3.5 text-sm font-semibold hover:bg-mint-soft">
+                              Abonar en esta salida
                             </Link>
                           </>
                         ) : r.canMark ? (

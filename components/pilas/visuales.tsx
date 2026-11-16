@@ -111,9 +111,14 @@ export function VisualBalance({ t }: V<"balance">) {
                       </ul>
                       <div className="flex flex-wrap gap-2 pb-3 pl-12">
                         {p.leDeboUsd > 0 && (
-                          <Link href={`/pagar?a=${p.userId}`} className="btn-pop h-9 px-3.5 text-sm">
-                            💸 Pagarle
-                          </Link>
+                          <>
+                            <Link href={`/pagar?a=${p.userId}`} className="btn-pop h-9 px-3.5 text-sm">
+                              💸 Pagarle
+                            </Link>
+                            <Link href={`/pagar?a=${p.userId}&abono=1`} className="inline-flex h-9 items-center rounded-full border-2 border-mint px-3.5 text-sm font-semibold hover:bg-mint-soft">
+                              Abonar
+                            </Link>
+                          </>
                         )}
                         {p.meDebeUsd > 0 && <Recordar accion={() => remindPerson(p.userId)} />}
                       </div>

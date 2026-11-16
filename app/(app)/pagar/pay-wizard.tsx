@@ -42,29 +42,27 @@ export type Creditor = {
 
 type Method = { id: string; label: string; currency: Currency; needsRef: boolean };
 
-const STEPS = ["¿A quién?", "¿Qué le pagas?", "¿Cómo le pagas?", "Confirmar"];
+const STEPS = ["¿A quién?", "Salida y monto", "¿Cómo pagas?", "Confirmar"];
 
 export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = false }: { creditors: Creditor[]; preselect?: string; salida?: string; aiOn: boolean; payAll?: boolean; abono?: boolean }) {
   const { rates } = useDisplay();
   const toast = useToast();
   const [pending, start] = useTransition();
+  const [abonoMode, setAbonoMode] = useState(abono);
   const [to, setTo] = useState<string | undefined>(preselect ?? (creditors.length === 1 ? creditors[0].userId : undefined));
   const [step, setStep] = useState(to ? 1 : 0);
   const c = creditors.find((x) => x.userId === to);
   const [picked, setPicked] = useState<string[]>(() => {
     const cc = creditors.find((x) => x.userId === (preselect ?? (creditors.length === 1 ? creditors[0].userId : undefined)));
     if (!cc) return [];
-    return salida && cc.items.some((i) => i.salidaId === salida) ? [salida] : cc.items.map((i) => i.salidaId);
+    if (salida && cc.items.some((i) => i.salidaId === salida)) return [salida];
+    return abono ? (cc.items.length === 1 && !cc.items[0].cuota ? [cc.items[0].salidaId] : []) : cc.items.map((i) => i.salidaId);
   });
-  const [abonoUsd, setAbonoUsd] = useState(() => {
-    const cc = creditors.find((x) => x.userId === preselect);
-    const item = cc?.items.find((i) => i.salidaId === salida);
-    return item ? (item.remainingUsd / 100).toFixed(2) : "";
-  });
+  const [abonoUsd, setAbonoUsd] = useState("");
   const [method, setMethod] = useState<string | null>(null);
   const [reference, setReference] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
-  const [done, setDone] = useState<{ amount: number; currency: Currency; name: string } | null>(null);
+  const [done, setDone] = useState<{ amount: number; currency: Currency; name: string; isAbono: boolean } | null>(null);
   const [asked, setAsked] = useState(false);
   // Captura del pago (opcional): se sube antes de confirmar y la IA la revisa.
   const [proof, setProof] = useState<{ id: string; preview: string; ai: ProofAi | null; aiError?: string } | null>(null);
@@ -87,10 +85,10 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
     if (cur.includes(n) && cur.length === 1) return;
     setCuotaPicks((x) => ({ ...x, [i.salidaId]: cur.includes(n) ? cur.filter((y) => y !== n) : [...cur, n] }));
   };
-  const amountOf = (i: Item) => abono ? Math.round((Number(abonoUsd) || 0) * 100) : i.cuota ? i.cuota.pending.filter((p) => cuotasOf(i).includes(p.n)).reduce((a, p) => a + p.restUsd, 0) : i.remainingUsd;
+  const amountOf = (i: Item) => abonoMode ? Math.round((Number(abonoUsd) || 0) * 100) : i.cuota ? i.cuota.pending.filter((p) => cuotasOf(i).includes(p.n)).reduce((a, p) => a + p.restUsd, 0) : i.remainingUsd;
   const selected = c?.items.filter((i) => picked.includes(i.salidaId)) ?? [];
   const selectedItem = selected[0];
-  const partialAmountUsd = abono && selectedItem ? amountOf(selectedItem) : undefined;
+  const partialAmountUsd = abonoMode && selectedItem ? amountOf(selectedItem) : undefined;
   const usd = selected.reduce((a, i) => a + amountOf(i), 0);
   const ves = selected.reduce((a, i) => a + Math.round(amountOf(i) * vesPerUsd(rates, i.rateSource as RateSourceId)), 0);
   // Salidas anotadas en Bs a otra tasa: se le explica por qué el monto no es el de cuando se anotó.
@@ -104,7 +102,7 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
 
   const pm = c?.payInfo.pagoMovil ?? {};
   const methods: Method[] = (() => {
-    if (abono) return PAY_METHODS.map((m) => ({
+    if (abonoMode) return PAY_METHODS.map((m) => ({
       id: m.id,
       label: `${m.emoji} ${m.label}`,
       currency: m.currency,
@@ -120,6 +118,25 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
   })();
   const chosen = methods.find((m) => m.id === method);
   const amountIn = (cur: Currency) => cur === "VES" ? ves : cur === "EUR" ? Math.round(usd * rates.bcvUsd / rates.bcvEur) : usd;
+
+  const changePayMode = (partial: boolean) => {
+    setAbonoMode(partial);
+    setAbonoUsd("");
+    setPicked((current) => {
+      if (!c) return current;
+      if (partial) {
+        const initial = salida && c.items.some((i) => i.salidaId === salida && !i.cuota)
+          ? salida
+          : current.find((id) => c.items.some((i) => i.salidaId === id && !i.cuota));
+        return initial ? [initial] : c.items.length === 1 && !c.items[0].cuota ? [c.items[0].salidaId] : [];
+      }
+      return salida && c.items.some((i) => i.salidaId === salida) ? [salida] : c.items.map((i) => i.salidaId);
+    });
+    setMethod(null);
+    setReference("");
+    if (proof) URL.revokeObjectURL(proof.preview);
+    setProof(null);
+  };
 
   /** Sube la captura del pago; si la IA la lee, completa la referencia sola. */
   const uploadProof = (file: File | undefined, input: HTMLInputElement) => {
@@ -161,7 +178,7 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
         </motion.div>
         <p className="display mt-4 text-2xl font-extrabold">¡Anotado!</p>
         <p className="mt-2 text-muted">
-          Le avisamos a <b className="text-text">{done.name}</b> que le pagaste <b className="num text-text">{fmt(done.amount, done.currency)}</b>. Cuando confirme que le llegó, te llega un aviso ✅
+          Le avisamos a <b className="text-text">{done.name}</b> que {done.isAbono ? "abonaste" : "le pagaste"} <b className="num text-text">{fmt(done.amount, done.currency)}</b>. Cuando confirme que le llegó, te llega un aviso ✅
         </p>
         <Link href="/inicio" className="btn-pop mt-6 h-11 px-6">
           Volver al inicio
@@ -194,7 +211,7 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
               key={x.userId}
               onClick={() => {
                 setTo(x.userId);
-                setPicked(x.items.map((i) => i.salidaId));
+                setPicked(abonoMode ? (x.items.length === 1 && !x.items[0].cuota ? [x.items[0].salidaId] : []) : x.items.map((i) => i.salidaId));
                 setMethod(null);
                 setStep(1);
               }}
@@ -217,16 +234,30 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
         <div className="card p-5">
           <div className="flex items-center gap-3">
             <Avatar emoji={c.avatar} color={c.color} size={44} />
-            <p className="font-semibold">{abono ? `¿A qué salida le vas a abonar a ${c.name}?` : `¿Qué le estás pagando a ${c.name}?`}</p>
+            <p className="font-semibold">¿Qué vas a hacer con la deuda de {c.name}?</p>
           </div>
+          <div className="mt-4 grid grid-cols-2 gap-2 rounded-2xl bg-card-2 p-1.5">
+            <button type="button" aria-pressed={!abonoMode} onClick={() => changePayMode(false)} className={clsx("rounded-xl px-3 py-3 text-sm font-bold", !abonoMode ? "bg-sun text-sun-ink shadow-pop" : "text-muted")}>Pagar todo</button>
+            <button type="button" aria-pressed={abonoMode} onClick={() => changePayMode(true)} className={clsx("rounded-xl px-3 py-3 text-sm font-bold", abonoMode ? "bg-mint text-on-color shadow-pop" : "text-muted")}>Abonar una parte</button>
+          </div>
+          <p className="mt-2 text-sm text-muted">{abonoMode ? "Elige una sola salida y anota cuánto abonaste." : "Puedes pagar una o varias salidas completas."}</p>
           <ul className="mt-4 space-y-2">
             {c.items.map((i) => {
               const on = picked.includes(i.salidaId);
               return (
                 <li key={i.salidaId}>
                   <button
-                    onClick={() => !abono && setPicked((p) => (on ? p.filter((x) => x !== i.salidaId) : [...p, i.salidaId]))}
-                    className={clsx("flex w-full items-center gap-3 rounded-2xl border-2 p-3 text-left", on ? "border-mint bg-mint-soft" : "border-line")}
+                    disabled={abonoMode && !!i.cuota}
+                    onClick={() => {
+                      if (abonoMode) {
+                        if (i.cuota) return;
+                        setPicked([i.salidaId]);
+                        setAbonoUsd("");
+                      } else {
+                        setPicked((p) => (on ? p.filter((x) => x !== i.salidaId) : [...p, i.salidaId]));
+                      }
+                    }}
+                    className={clsx("flex w-full items-center gap-3 rounded-2xl border-2 p-3 text-left", on ? "border-mint bg-mint-soft" : "border-line", abonoMode && i.cuota && "cursor-not-allowed opacity-60")}
                   >
                     <span className={clsx("grid size-6 place-items-center rounded-md border-2", on ? "border-mint bg-mint text-on-color" : "border-line-strong")}>{on && <Check size={14} strokeWidth={3} />}</span>
                     <span className="text-xl">{i.emoji}</span>
@@ -234,8 +265,9 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
                       <span className="block truncate font-semibold">{i.title}</span>
                       <span className="block text-xs text-muted">{prettyDay(i.date)}</span>
                     </span>
-                    <Money usd={on ? amountOf(i) : i.remainingUsd} className="font-bold" />
+                    <Money usd={on && !abonoMode ? amountOf(i) : i.remainingUsd} className="font-bold" />
                   </button>
+                  {abonoMode && i.cuota && <p className="mt-1.5 pl-9 text-xs text-muted">Esta salida usa Cashea. Elige una o varias cuotas desde «Pagar todo».</p>}
                   {on && i.cuota?.pending.length === 1 && (
                     <p className="mt-1.5 pl-9 text-xs text-muted">
                       {i.cuota.n === 0 ? "La inicial" : `Cuota ${i.cuota.n}/${i.cuota.count}`} · {dueLabel(i.cuota.pending[0].daysLeft)}
@@ -280,20 +312,23 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
               );
             })}
           </ul>
-          {abono && selectedItem && (
+          {abonoMode && !selectedItem && <p className="mt-4 rounded-xl border-2 border-mint bg-mint-soft p-3 text-sm font-semibold">Toca la salida a la que quieres abonarle. El abono se registra solo en esa salida.</p>}
+          {abonoMode && selectedItem && (
             <div className="mt-4 rounded-2xl border-2 border-line p-4">
-              <label className="label" htmlFor="abono-usd">¿Cuánto vas a abonar en esta salida?</label>
+              <p className="text-xs font-semibold text-muted">Saldo pendiente en esta salida</p>
+              <p className="num mt-1 text-xl font-bold">{fmt(selectedItem.remainingUsd, "USD")}</p>
+              <label className="label mt-4 block" htmlFor="abono-usd">¿Cuánto vas a abonar?</label>
               <div className="mt-2 flex items-center gap-2">
                 <span className="text-lg font-bold">$</span>
-                <input id="abono-usd" className="field num" type="number" inputMode="decimal" min="0.01" max={(selected[0].remainingUsd / 100).toFixed(2)} step="0.01" value={abonoUsd} onChange={(e) => setAbonoUsd(e.target.value)} />
+                <input id="abono-usd" className="field num" type="number" inputMode="decimal" min="0.01" max={(selectedItem.remainingUsd / 100).toFixed(2)} step="0.01" placeholder="Ej. 5,00" value={abonoUsd} onChange={(e) => setAbonoUsd(e.target.value)} />
               </div>
-              <p className="mt-1 text-xs text-muted">Pendiente en «{selectedItem.title}»: {fmt(selectedItem.remainingUsd, "USD")} · unos {fmt(Math.round(selectedItem.remainingUsd * vesPerUsd(rates, selectedItem.rateSource as RateSourceId)), "VES")}.</p>
+              <p className="mt-1 text-xs text-muted">Escribe cuánto abonaste. No puede superar el saldo pendiente.</p>
               {selectedItem.cuota && <p className="mt-2 text-xs font-semibold text-rose">Esta salida usa Cashea: elige las cuotas que pagas desde el flujo normal.</p>}
               {amountOf(selectedItem) > selectedItem.remainingUsd && <p className="mt-2 text-xs font-semibold text-rose">El abono no puede ser mayor que lo pendiente.</p>}
             </div>
           )}
           <div className="mt-4 rounded-2xl border-2 border-ink bg-sun p-4 text-center text-sun-ink">
-            <p className="text-xs font-bold opacity-70">Total a pagar</p>
+            <p className="text-xs font-bold opacity-70">{abonoMode ? "Monto del abono" : "Total a pagar"}</p>
             <p className="num text-3xl font-bold">{fmt(usd, "USD")}</p>
             <p className="num text-sm opacity-80">
               {fmt(ves, "VES")} a {rateLabel || "BCV $"} de hoy
@@ -315,7 +350,7 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
       {step === 2 && c && (
         <div className="space-y-4">
           <div className="card p-5">
-            <p className="font-semibold">¿Cómo le vas a pagar a {c.name}?</p>
+            <p className="font-semibold">{abonoMode ? `¿Cómo vas a abonarle a ${c.name}?` : `¿Cómo le vas a pagar a ${c.name}?`}</p>
             <div className="mt-3 grid grid-cols-2 gap-2">
               {methods.map((m) => (
                 <button
@@ -436,7 +471,7 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
 
       {step === 3 && c && chosen && (
         <div className="card space-y-4 p-5">
-          <p className="display text-xl font-bold">¿Ya le pagaste a {c.name}?</p>
+          <p className="display text-xl font-bold">{abonoMode ? `¿Ya hiciste el abono para ${c.name}?` : `¿Ya le pagaste a ${c.name}?`}</p>
           <div className="rounded-2xl bg-card-2 p-4 text-sm">
             <p className="num text-2xl font-bold">{fmt(amountIn(chosen.currency), chosen.currency)}</p>
             <p className="text-muted">
@@ -485,16 +520,16 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
             size="lg"
             className="w-full"
             loading={pending}
-            disabled={abono && (!selected[0] || amountOf(selected[0]) <= 0 || amountOf(selected[0]) > selected[0].remainingUsd || !!selected[0].cuota)}
+            disabled={abonoMode && (!selected[0] || amountOf(selected[0]) <= 0 || amountOf(selected[0]) > selected[0].remainingUsd || !!selected[0].cuota)}
             onClick={() =>
               start(async () => {
                 const r = await payDebts({ toUserId: c.userId, salidaIds: picked, method: chosen.id, currency: chosen.currency, reference: reference || undefined, proofId: proof?.id, cuotas, amountUsd: partialAmountUsd });
-                if (r.ok) setDone({ amount: r.amount, currency: chosen.currency, name: c.name });
+                if (r.ok) setDone({ amount: r.amount, currency: chosen.currency, name: c.name, isAbono: abonoMode });
                 else toast(r.error, "error");
               })
             }
           >
-            <Check size={18} /> Sí, ya le pagué
+            <Check size={18} /> {abonoMode ? "Sí, ya hice el abono" : "Sí, ya le pagué"}
           </Button>
         </div>
       )}
@@ -511,7 +546,7 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = 
           )}
           <span className="flex-1" />
           {step === 1 && (
-            <Button disabled={!picked.length || (abono && (!selectedItem || amountOf(selectedItem) <= 0 || amountOf(selectedItem) > selectedItem.remainingUsd || !!selectedItem.cuota))} onClick={() => setStep(2)}>
+            <Button disabled={!picked.length || (abonoMode && (!selectedItem || amountOf(selectedItem) <= 0 || amountOf(selectedItem) > selectedItem.remainingUsd || !!selectedItem.cuota))} onClick={() => setStep(2)}>
               Siguiente <ArrowRight size={16} />
             </Button>
           )}

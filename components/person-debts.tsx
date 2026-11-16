@@ -65,7 +65,7 @@ export function PersonDebts({ kind, people }: { kind: "cobrar" | "pagar"; people
                 )}
               </p>
               <p className="flex items-center gap-1 text-xs text-muted">
-                {p.items.length} {p.items.length === 1 ? "salida" : "salidas"} <ChevronDown size={13} className={clsx("transition-transform", open === p.userId && "rotate-180")} />
+                {p.items.length} {p.items.length === 1 ? "salida" : "salidas"}{kind === "pagar" && " · puedes abonar por salida"} <ChevronDown size={13} className={clsx("transition-transform", open === p.userId && "rotate-180")} />
               </p>
               {nextCuotaOf(p) && (
                 <p className={clsx("text-xs font-semibold", nextCuotaOf(p)!.daysLeft < 0 ? "text-rose" : "text-text")}>
@@ -79,9 +79,14 @@ export function PersonDebts({ kind, people }: { kind: "cobrar" | "pagar"; people
             </div>
             <div className="flex w-full gap-2 sm:w-auto">
               {kind === "pagar" ? (
-                <Link href={`/pagar?a=${p.userId}`} className="btn-pop h-10 flex-1 px-4 text-sm sm:flex-none">
-                  Pagarle
-                </Link>
+                <>
+                  <Link href={`/pagar?a=${p.userId}`} className="btn-pop h-10 flex-1 px-4 text-sm sm:flex-none">
+                    Pagarle
+                  </Link>
+                  <Link href={`/pagar?a=${p.userId}&abono=1`} className="inline-flex h-10 flex-1 items-center justify-center rounded-full border-2 border-mint px-4 text-sm font-semibold text-text hover:bg-mint-soft sm:flex-none">
+                    Abonar
+                  </Link>
+                </>
               ) : (
                 <>
                   <Button

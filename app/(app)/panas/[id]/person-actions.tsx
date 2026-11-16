@@ -15,9 +15,14 @@ export function PersonActions({ userId, name, owesMe, iOwe }: { userId: string; 
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
       {iOwe > 0 && (
-        <Link href={`/pagar?a=${userId}`} className="btn-pop h-11">
-          <HandCoins size={17} /> Pagarle
-        </Link>
+        <>
+          <Link href={`/pagar?a=${userId}`} className="btn-pop h-11">
+            <HandCoins size={17} /> Pagarle
+          </Link>
+          <Link href={`/pagar?a=${userId}&abono=1`} className="inline-flex h-11 items-center justify-center gap-2 rounded-full border-2 border-mint px-3 text-sm font-semibold hover:bg-mint-soft">
+            <HandCoins size={17} /> Abonar
+          </Link>
+        </>
       )}
       {owesMe > 0 && (
         <Button
