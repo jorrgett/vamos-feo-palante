@@ -9,9 +9,9 @@ import { PayWizard, type Creditor } from "./pay-wizard";
 
 export const metadata: Metadata = { title: "Pagar" };
 
-export default async function Pagar({ searchParams }: { searchParams: Promise<{ a?: string; s?: string; todo?: string }> }) {
+export default async function Pagar({ searchParams }: { searchParams: Promise<{ a?: string; s?: string; todo?: string; abono?: string }> }) {
   const user = await requireUser();
-  const { a, s, todo } = await searchParams;
+  const { a, s, todo, abono } = await searchParams;
   const bundles = await getEverything(user.id);
   const owe = personBalances(bundles).filter((b) => b.iOwe > 0);
   const db = await getDb();
@@ -31,7 +31,7 @@ export default async function Pagar({ searchParams }: { searchParams: Promise<{ 
     <div className="mx-auto max-w-xl">
       <h1 className="display text-3xl font-extrabold sm:text-4xl">Pagarle a un pana 💸</h1>
       <p className="mt-1 mb-5 text-muted">Te guío: a quién, qué le estás pagando y sus datos para pagarle. Al final le llega el aviso para que confirme.</p>
-      <PayWizard creditors={creditors} preselect={creditors.some((c) => c.userId === a) ? a : undefined} salida={s} aiOn={aiEnabled()} payAll={todo === "1"} />
+      <PayWizard creditors={creditors} preselect={creditors.some((c) => c.userId === a) ? a : undefined} salida={s} aiOn={aiEnabled()} payAll={todo === "1"} abono={abono === "1"} />
     </div>
   );
 }

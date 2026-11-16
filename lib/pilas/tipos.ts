@@ -1,5 +1,6 @@
 // Pilas 🔋: el asistente de la app. Tipos que comparten el servidor y la pantalla del chat.
 import type { SalidaInput } from "@/app/actions/salidas";
+import type { Currency } from "@/lib/money";
 
 export type PersonaVista = { nombre: string; avatar: string; color: string };
 
@@ -45,8 +46,9 @@ export type Tarjeta =
       salidaId?: string;
       memberId?: string;
       metodo: string;
-      moneda: "USD" | "VES";
+      moneda: Currency;
       montoUsd: number;
+      abono?: boolean;
       detalle: string;
     }
   | { tipo: "confirmar"; id: string; settlementIds: string[]; persona: PersonaVista; montoUsd: number; detalle: string }

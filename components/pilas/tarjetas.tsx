@@ -6,6 +6,7 @@ import { ArrowRight, Check, MessageCircle, Send } from "lucide-react";
 import { answerPayment, markPersonPaid, markSharePaid, remindPending, remindPerson, saveSalida } from "@/app/actions/salidas";
 import { sendDirect } from "@/app/actions/notifications";
 import { payMethodOf } from "@/lib/constants";
+import { fmt } from "@/lib/money";
 import type { EstadoTarjeta, PersonaVista, Tarjeta } from "@/lib/pilas/tipos";
 import { Money } from "@/components/display";
 import { Avatar, Button, useToast } from "@/components/ui";
@@ -257,7 +258,7 @@ function Pagado({ t, estado, onHecho }: P<"pagado">) {
   const { pending, run } = useAccion();
   return (
     <>
-      <p className="mb-3 text-sm font-bold">✅ Anotar que ya te pagó</p>
+      <p className="mb-3 text-sm font-bold">✅ {t.abono ? "Anotar el abono que recibiste" : "Anotar que ya te pagó"}</p>
       <Persona p={t.persona}>
         <p className="truncate text-xs text-muted">
           {t.detalle} · {payMethodOf(t.metodo).label}
@@ -274,12 +275,12 @@ function Pagado({ t, estado, onHecho }: P<"pagado">) {
           loading={pending}
           onClick={() =>
             run(
-              () => (t.salidaId && t.memberId ? markSharePaid(t.salidaId, t.memberId, t.metodo, t.moneda) : markPersonPaid(t.userId!, t.metodo, t.moneda)),
-              () => onHecho({ estado: "hecho", texto: `Listo: ${t.persona.nombre} quedó al día` }, `Tocó «Sí, ya me pagó»: quedó anotado que ${t.persona.nombre} pagó (${t.detalle}).`),
+              () => (t.salidaId && t.memberId ? markSharePaid(t.salidaId, t.memberId, t.metodo, t.moneda, undefined, t.montoUsd) : markPersonPaid(t.userId!, t.metodo, t.moneda)),
+              () => onHecho({ estado: "hecho", texto: `Listo: quedó anotado el pago de ${t.persona.nombre}` }, `Tocó «Sí, ya me pagó»: quedó anotado que ${t.persona.nombre} ${t.abono ? `abonó ${fmt(t.montoUsd, "USD")} en` : "pagó"} ${t.detalle}.`),
             )
           }
         >
-          <Check size={16} strokeWidth={3} /> Sí, ya me pagó
+          <Check size={16} strokeWidth={3} /> {t.abono ? "Anotar abono" : "Sí, ya me pagó"}
         </Button>
       )}
     </>

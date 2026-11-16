@@ -5,7 +5,7 @@ La libreta de cuentas de los panas: cada vez que salen, una **salida** con quié
 ## Qué hace
 
 - **Salidas paso a paso**: qué fue (una o varias categorías), quiénes fueron, cuánto fue, quién puso la plata y cómo se divide (partes iguales, montos, porcentajes, por partes o por consumo, con servicio e IVA).
-- **¿Quién ya pagó?**: cada pana ve lo que debe y a quién; el que cobra confirma cada pago.
+- **¿Quién ya pagó?**: cada pana ve lo que debe y a quién; se puede abonar una deuda dentro de una salida con cualquiera de los métodos disponibles. Quien cobra o creó la salida puede elegir qué persona pagó y anotar si recibió todo o una parte, con su método y moneda.
 - **Pagos guiados**: los datos de pago móvil, Zelle o Binance del que cobra, con el monto exacto en Bs y botones para copiar en el formato que piden los bancos. Se puede adjuntar la captura del pago.
 - **Tasas**: BCV ($ y €) y USDT (mediana de Binance P2P), guardadas a diario.
 - **Cashea**: planes con inicial y cuotas cada 14 días. En modo espejo cada pana paga su parte al ritmo de las cuotas y la app le muestra su próxima cuota.

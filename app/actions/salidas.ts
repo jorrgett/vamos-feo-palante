@@ -442,20 +442,31 @@ export async function setSalidaClosed(salidaId: string, closed: boolean): Promis
 }
 
 /** Marca que alguien ya pagó su parte. Si lo marca el que cobra, queda confirmado; si no, queda por confirmar. */
-export async function markSharePaid(salidaId: string, memberId: string, method: string, currency: "USD" | "VES", reference?: string): Promise<ActionResult> {
+export async function markSharePaid(salidaId: string, memberId: string, method: string, currency: Currency, reference?: string, amountUsd?: number): Promise<ActionResult> {
   const user = await requireUser();
   const ledger = await getLedger(salidaId, user.id);
   const e = ledger?.expenses[0];
   if (!ledger || !e) return { ok: false, error: "No encontré esa salida." };
   if (!PAY_METHODS.some((m) => m.id === method)) method = "otro";
+  const partsForMember = debtSplit(eLikeOf(e), memberId);
+  const canCollect = partsForMember.some((part) => part.to === ledger.me.id);
+  const isCreator = ledger.group.createdBy === user.id;
+  if (!canCollect && !isCreator) return { ok: false, error: "Solo quien recibe el pago o quien creó la salida puede anotarlo." };
   const eLike = eLikeOf(e);
   const linked = linkedOf(ledger, e.id);
-  const rate = vesPerUsd(await getRates(), ledger.group.rateSource as RateSourceId);
+  const rates = await getRates();
+  const rate = vesPerUsd(rates, ledger.group.rateSource as RateSourceId);
+  if (amountUsd != null && (!Number.isSafeInteger(amountUsd) || amountUsd <= 0)) return { ok: false, error: "Pon un monto mayor que cero." };
+  const outstanding = debtSplit(eLike, memberId).map((part) => ({ ...part, rest: remainingTo(eLike, linked, memberId, part.to) })).filter((part) => part.rest > 0);
+  const remainingUsd = outstanding.reduce((sum, part) => sum + part.rest, 0);
+  const paymentUsd = amountUsd ?? remainingUsd;
+  if (paymentUsd <= 0 || paymentUsd > remainingUsd) return { ok: false, error: `El abono no puede pasar de lo pendiente (${fmt(remainingUsd, "USD")}).` };
+  const portions = paymentUsd === remainingUsd ? outstanding.map((part) => part.rest) : allocate(paymentUsd, outstanding.map((part) => part.rest));
   const batchId = randomUUID();
   const rows: (typeof schema.settlements.$inferInsert)[] = [];
-  for (const part of debtSplit(eLike, memberId)) {
-    const rest = remainingTo(eLike, linked, memberId, part.to);
-    if (rest <= 0) continue;
+  for (const [i, part] of outstanding.entries()) {
+    const paidUsd = portions[i];
+    if (paidUsd <= 0) continue;
     rows.push({
       groupId: salidaId,
       expenseId: e.id,
@@ -463,13 +474,13 @@ export async function markSharePaid(salidaId: string, memberId: string, method: 
       fromMember: memberId,
       toMember: part.to,
       currency,
-      amount: currency === "VES" ? Math.round(rest * rate) : rest,
-      amountUsd: rest,
+      amount: currency === "VES" ? Math.round(paidUsd * rate) : currency === "EUR" ? Math.round((paidUsd * rate) / rates.bcvEur) : paidUsd,
+      amountUsd: paidUsd,
       rate: currency === "VES" ? rate : null,
       rateSource: currency === "VES" ? ledger.group.rateSource : null,
       method,
       reference: reference?.trim().slice(0, 40) || null,
-      note: `Su parte de «${e.title}»`.slice(0, 140),
+      note: `${paymentUsd < remainingUsd ? "Abono" : "Su parte"} de «${e.title}»`.slice(0, 140),
       paidAt: new Date(),
       confirmedAt: part.to === ledger.me.id ? new Date() : null,
       createdBy: user.id,
@@ -486,20 +497,20 @@ export async function markSharePaid(salidaId: string, memberId: string, method: 
     if (!creditor?.userId) continue;
     items.push(
       r.confirmedAt
-        ? { userId: creditor.userId, groupId: salidaId, kind: "parte", emoji: "✅", title: `${debtor?.name} ya pagó su parte de «${e.title}»`, body: fmt(r.amountUsd, "USD"), url: salidaUrl(salidaId) }
+        ? { userId: creditor.userId, groupId: salidaId, kind: "parte", emoji: "✅", title: `${debtor?.name} ${paymentUsd < remainingUsd ? "abonó" : "ya pagó su parte"} de «${e.title}»`, body: fmt(r.amountUsd, "USD"), url: salidaUrl(salidaId) }
         : {
             userId: creditor.userId,
             groupId: salidaId,
             kind: "pago",
             emoji: "💸",
-            title: `${debtor?.id === ledger.me.id ? user.name : debtor?.name} dice que te pagó. ¿Te llegó?`,
+            title: `${debtor?.id === ledger.me.id ? user.name : debtor?.name} ${paymentUsd < remainingUsd ? "te abonó" : "dice que te pagó"}. ¿Te llegó?`,
             body: `${fmt(r.amount ?? 0, currency)} por ${payMethodOf(method).label.toLowerCase()}${r.reference ? ` · ref ${r.reference}` : ""} · «${e.title}». Entra para confirmar.`,
             url: "/inicio#por-confirmar",
           },
     );
   }
   if (debtor?.userId && debtor.userId !== user.id)
-    items.push({ userId: debtor.userId, groupId: salidaId, kind: "parte", emoji: "✅", title: `${user.name} marcó como pagada tu parte de «${e.title}»`, body: "Si no es así, avísale 👀", url: salidaUrl(salidaId) });
+    items.push({ userId: debtor.userId, groupId: salidaId, kind: "parte", emoji: "✅", title: `${user.name} ${paymentUsd < remainingUsd ? "anotó un abono a" : "marcó como pagada"} tu parte de «${e.title}»`, body: "Si no es así, avísale 👀", url: salidaUrl(salidaId) });
   await notify(items, user.id);
   revalidatePath("/", "layout");
   return { ok: true, id: first.id };
@@ -622,7 +633,9 @@ const paySchema = z.object({
   proofId: z.string().uuid().optional(),
   /** Cashea en espejo: las cuotas que paga de cada salida. */
   cuotas: z.record(z.string().uuid(), z.array(z.number().int().min(0).max(60)).min(1).max(61)).optional(),
-});
+  /** Abono expresado en centavos de USD, solo para una salida concreta y sin cuotas Cashea. */
+  amountUsd: z.number().int().min(1).max(1e13).optional(),
+}).refine((d) => d.amountUsd == null || d.salidaIds.length === 1, { message: "Los abonos se anotan en una sola salida." });
 export type PayInput = z.input<typeof paySchema>;
 
 type PayRow = typeof schema.settlements.$inferInsert;
@@ -634,6 +647,7 @@ async function buildPayRows(userId: string, d: z.infer<typeof paySchema>, batchI
   const titles: string[] = [];
   /** Lo que se debe en cada moneda (para revisar el comprobante). */
   const owed = { VES: 0, USD: 0, EUR: 0 };
+  let error: string | undefined;
   for (const sid of new Set(d.salidaIds)) {
     const ledger = await getLedger(sid, userId);
     const e = ledger?.expenses[0];
@@ -647,7 +661,15 @@ async function buildPayRows(userId: string, d: z.infer<typeof paySchema>, batchI
     const plan = casheaPlanOf(ledger);
     const mirror = plan?.memberId === creditor.id ? mirrorForDebtor(plan, eLikeOf(e), linked, ledger.me.id) : null;
     const wanted = d.cuotas?.[sid];
-    const slices: { cuotaN: number | null; usd: number }[] = mirror && wanted ? mirror.parts.filter((p) => wanted.includes(p.n) && p.restUsd > 0).map((p) => ({ cuotaN: p.n, usd: p.restUsd })) : [{ cuotaN: null, usd: owes }];
+    if (d.amountUsd != null && mirror) {
+      error = "En las salidas con Cashea, el abono se elige por cuota.";
+      continue;
+    }
+    if (d.amountUsd != null && d.amountUsd > owes) {
+      error = `El abono no puede pasar de lo pendiente en esta salida (${fmt(owes, "USD")}).`;
+      continue;
+    }
+    const slices: { cuotaN: number | null; usd: number }[] = mirror && wanted ? mirror.parts.filter((p) => wanted.includes(p.n) && p.restUsd > 0).map((p) => ({ cuotaN: p.n, usd: p.restUsd })) : [{ cuotaN: null, usd: d.amountUsd ?? owes }];
     if (slices.length === 0) continue;
     const rate = vesPerUsd(rates, ledger.group.rateSource as RateSourceId);
     titles.push(mirror && wanted ? `${e.title} (${cuotasLabel(slices.map((x) => x.cuotaN!))})` : e.title);
@@ -677,7 +699,7 @@ async function buildPayRows(userId: string, d: z.infer<typeof paySchema>, batchI
       });
     }
   }
-  return { rows, titles, owed };
+  return { rows, titles, owed, error };
 }
 
 /**
@@ -694,7 +716,8 @@ export async function attachProof(formData: FormData): Promise<{ ok: true; proof
   } catch (e) {
     return { ok: false, error: e instanceof AiError ? e.message : "No llegó la foto." };
   }
-  const { rows, owed } = await buildPayRows(user.id, parsed.data, randomUUID());
+  const { rows, owed, error } = await buildPayRows(user.id, parsed.data, randomUUID());
+  if (error) return { ok: false, error };
   if (rows.length === 0) return { ok: false, error: "No hay nada pendiente con esa persona en esas salidas." };
 
   let ai: ProofAi | null = null;
@@ -725,7 +748,8 @@ export async function payDebts(input: PayInput): Promise<{ ok: true; totalUsd: n
   const parsed = paySchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
   const d = parsed.data;
-  const { rows, titles } = await buildPayRows(user.id, d, randomUUID());
+  const { rows, titles, error } = await buildPayRows(user.id, d, randomUUID());
+  if (error) return { ok: false, error };
   if (rows.length === 0) return { ok: false, error: "No hay nada pendiente con esa persona en esas salidas." };
   const db = await getDb();
   const inserted = await db.insert(schema.settlements).values(rows).returning({ id: schema.settlements.id });
@@ -920,7 +944,7 @@ export async function toggleInstallment(salidaId: string, installmentId: string,
 }
 
 /** El que cobra marca que un pana ya le pagó todo lo que le debía (en todas las salidas). */
-export async function markPersonPaid(userId: string, method: string, currency: "USD" | "VES"): Promise<ActionResult> {
+export async function markPersonPaid(userId: string, method: string, currency: Currency): Promise<ActionResult> {
   const user = await requireUser();
   const bundles = await getEverything(user.id);
   if (!PAY_METHODS.some((m) => m.id === method)) method = "otro";
@@ -941,7 +965,7 @@ export async function markPersonPaid(userId: string, method: string, currency: "
       fromMember: debtor.id,
       toMember: ledger.me.id,
       currency,
-      amount: currency === "VES" ? Math.round(rest * rate) : rest,
+      amount: currency === "VES" ? Math.round(rest * rate) : currency === "EUR" ? Math.round((rest * rate) / rates.bcvEur) : rest,
       amountUsd: rest,
       rate: currency === "VES" ? rate : null,
       rateSource: currency === "VES" ? ledger.group.rateSource : null,

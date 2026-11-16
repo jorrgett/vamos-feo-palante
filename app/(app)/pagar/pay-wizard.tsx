@@ -3,7 +3,7 @@
 import clsx from "clsx";
 import { motion } from "motion/react";
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { ArrowLeft, ArrowRight, Check, Copy, MessageCircle, Paperclip, Send } from "lucide-react";
 import { attachProof, payDebts } from "@/app/actions/salidas";
 import { askPayInfo } from "@/app/actions/notifications";
@@ -15,6 +15,7 @@ import { cuotasLabel, dueLabel } from "@/lib/cashea";
 import { prettyDay } from "@/lib/dates";
 import { fmt, fmtNumber, type Currency } from "@/lib/money";
 import { amountForBank, bankCode, docParts, pagoMovilBlock, phoneForBank } from "@/lib/pago-movil";
+import { PAY_METHODS } from "@/lib/constants";
 import { RATE_META, vesPerUsd, type RateSourceId } from "@/lib/rates-shared";
 import type { PayInfo, ProofAi } from "@/lib/db/schema";
 
@@ -43,7 +44,7 @@ type Method = { id: string; label: string; currency: Currency; needsRef: boolean
 
 const STEPS = ["¿A quién?", "¿Qué le pagas?", "¿Cómo le pagas?", "Confirmar"];
 
-export function PayWizard({ creditors, preselect, salida, aiOn, payAll }: { creditors: Creditor[]; preselect?: string; salida?: string; aiOn: boolean; payAll?: boolean }) {
+export function PayWizard({ creditors, preselect, salida, aiOn, payAll, abono = false }: { creditors: Creditor[]; preselect?: string; salida?: string; aiOn: boolean; payAll?: boolean; abono?: boolean }) {
   const { rates } = useDisplay();
   const toast = useToast();
   const [pending, start] = useTransition();
@@ -54,6 +55,11 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll }: { cred
     const cc = creditors.find((x) => x.userId === (preselect ?? (creditors.length === 1 ? creditors[0].userId : undefined)));
     if (!cc) return [];
     return salida && cc.items.some((i) => i.salidaId === salida) ? [salida] : cc.items.map((i) => i.salidaId);
+  });
+  const [abonoUsd, setAbonoUsd] = useState(() => {
+    const cc = creditors.find((x) => x.userId === preselect);
+    const item = cc?.items.find((i) => i.salidaId === salida);
+    return item ? (item.remainingUsd / 100).toFixed(2) : "";
   });
   const [method, setMethod] = useState<string | null>(null);
   const [reference, setReference] = useState("");
@@ -81,8 +87,10 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll }: { cred
     if (cur.includes(n) && cur.length === 1) return;
     setCuotaPicks((x) => ({ ...x, [i.salidaId]: cur.includes(n) ? cur.filter((y) => y !== n) : [...cur, n] }));
   };
-  const amountOf = (i: Item) => (i.cuota ? i.cuota.pending.filter((p) => cuotasOf(i).includes(p.n)).reduce((a, p) => a + p.restUsd, 0) : i.remainingUsd);
+  const amountOf = (i: Item) => abono ? Math.round((Number(abonoUsd) || 0) * 100) : i.cuota ? i.cuota.pending.filter((p) => cuotasOf(i).includes(p.n)).reduce((a, p) => a + p.restUsd, 0) : i.remainingUsd;
   const selected = c?.items.filter((i) => picked.includes(i.salidaId)) ?? [];
+  const selectedItem = selected[0];
+  const partialAmountUsd = abono && selectedItem ? amountOf(selectedItem) : undefined;
   const usd = selected.reduce((a, i) => a + amountOf(i), 0);
   const ves = selected.reduce((a, i) => a + Math.round(amountOf(i) * vesPerUsd(rates, i.rateSource as RateSourceId)), 0);
   // Salidas anotadas en Bs a otra tasa: se le explica por qué el monto no es el de cuando se anotó.
@@ -95,7 +103,13 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll }: { cred
   const rateLabel = [...new Set(selected.map((i) => RATE_META[i.rateSource as RateSourceId]?.short ?? "BCV $"))].join(" / ");
 
   const pm = c?.payInfo.pagoMovil ?? {};
-  const methods: Method[] = useMemo(() => {
+  const methods: Method[] = (() => {
+    if (abono) return PAY_METHODS.map((m) => ({
+      id: m.id,
+      label: `${m.emoji} ${m.label}`,
+      currency: m.currency,
+      needsRef: ["pago_movil", "punto", "zelle", "binance", "tarjeta"].includes(m.id),
+    }));
     const m: Method[] = [];
     if (pm.telefono) m.push({ id: "pago_movil", label: "📲 Pago móvil", currency: "VES", needsRef: true });
     if (c?.payInfo.zelle) m.push({ id: "zelle", label: "⚡ Zelle", currency: "USD", needsRef: true });
@@ -103,9 +117,9 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll }: { cred
     m.push({ id: "efectivo_usd", label: "💵 Efectivo $", currency: "USD", needsRef: false });
     m.push({ id: "efectivo_bs", label: "🪙 Efectivo Bs", currency: "VES", needsRef: false });
     return m;
-  }, [pm.telefono, c?.payInfo.zelle, c?.payInfo.binance]);
+  })();
   const chosen = methods.find((m) => m.id === method);
-  const amountIn = (cur: Currency) => (cur === "VES" ? ves : usd);
+  const amountIn = (cur: Currency) => cur === "VES" ? ves : cur === "EUR" ? Math.round(usd * rates.bcvUsd / rates.bcvEur) : usd;
 
   /** Sube la captura del pago; si la IA la lee, completa la referencia sola. */
   const uploadProof = (file: File | undefined, input: HTMLInputElement) => {
@@ -115,7 +129,7 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll }: { cred
         const blob = await compressImage(file, 1600, 0.85);
         const fd = new FormData();
         fd.append("foto", blob, "comprobante.jpg");
-        fd.append("pago", JSON.stringify({ toUserId: c.userId, salidaIds: picked, method: chosen.id, currency: chosen.currency, cuotas }));
+        fd.append("pago", JSON.stringify({ toUserId: c.userId, salidaIds: picked, method: chosen.id, currency: chosen.currency, cuotas, amountUsd: partialAmountUsd }));
         const r = await attachProof(fd);
         if (!r.ok) return toast(r.error, "error");
         if (proof) URL.revokeObjectURL(proof.preview);
@@ -203,7 +217,7 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll }: { cred
         <div className="card p-5">
           <div className="flex items-center gap-3">
             <Avatar emoji={c.avatar} color={c.color} size={44} />
-            <p className="font-semibold">¿Qué le estás pagando a {c.name}?</p>
+            <p className="font-semibold">{abono ? `¿A qué salida le vas a abonar a ${c.name}?` : `¿Qué le estás pagando a ${c.name}?`}</p>
           </div>
           <ul className="mt-4 space-y-2">
             {c.items.map((i) => {
@@ -211,7 +225,7 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll }: { cred
               return (
                 <li key={i.salidaId}>
                   <button
-                    onClick={() => setPicked((p) => (on ? p.filter((x) => x !== i.salidaId) : [...p, i.salidaId]))}
+                    onClick={() => !abono && setPicked((p) => (on ? p.filter((x) => x !== i.salidaId) : [...p, i.salidaId]))}
                     className={clsx("flex w-full items-center gap-3 rounded-2xl border-2 p-3 text-left", on ? "border-mint bg-mint-soft" : "border-line")}
                   >
                     <span className={clsx("grid size-6 place-items-center rounded-md border-2", on ? "border-mint bg-mint text-on-color" : "border-line-strong")}>{on && <Check size={14} strokeWidth={3} />}</span>
@@ -266,6 +280,18 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll }: { cred
               );
             })}
           </ul>
+          {abono && selectedItem && (
+            <div className="mt-4 rounded-2xl border-2 border-line p-4">
+              <label className="label" htmlFor="abono-usd">¿Cuánto vas a abonar en esta salida?</label>
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-lg font-bold">$</span>
+                <input id="abono-usd" className="field num" type="number" inputMode="decimal" min="0.01" max={(selected[0].remainingUsd / 100).toFixed(2)} step="0.01" value={abonoUsd} onChange={(e) => setAbonoUsd(e.target.value)} />
+              </div>
+              <p className="mt-1 text-xs text-muted">Pendiente en «{selectedItem.title}»: {fmt(selectedItem.remainingUsd, "USD")} · unos {fmt(Math.round(selectedItem.remainingUsd * vesPerUsd(rates, selectedItem.rateSource as RateSourceId)), "VES")}.</p>
+              {selectedItem.cuota && <p className="mt-2 text-xs font-semibold text-rose">Esta salida usa Cashea: elige las cuotas que pagas desde el flujo normal.</p>}
+              {amountOf(selectedItem) > selectedItem.remainingUsd && <p className="mt-2 text-xs font-semibold text-rose">El abono no puede ser mayor que lo pendiente.</p>}
+            </div>
+          )}
           <div className="mt-4 rounded-2xl border-2 border-ink bg-sun p-4 text-center text-sun-ink">
             <p className="text-xs font-bold opacity-70">Total a pagar</p>
             <p className="num text-3xl font-bold">{fmt(usd, "USD")}</p>
@@ -344,7 +370,9 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll }: { cred
                     ? "Mándale el Zelle aquí"
                     : chosen.id === "binance"
                       ? "Mándale los USDT por Binance"
-                      : "Entrégaselo en persona"}
+                      : chosen.id.startsWith("efectivo")
+                        ? "Entrégaselo en persona"
+                        : `Paga por ${PAY_METHODS.find((m) => m.id === chosen.id)?.label.toLowerCase() ?? "este medio"}`}
               </p>
               <ul className="mt-3 space-y-2">
                 {(
@@ -367,7 +395,7 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll }: { cred
                             ["binance", "🟡 Binance Pay ID / correo", c.payInfo.binance, c.payInfo.binance?.trim()],
                             ["monto", "💰 Monto en USDT", fmtNumber(usd / 100), (usd / 100).toFixed(2)],
                           ]
-                        : [["monto", `💰 Monto en ${chosen.currency === "VES" ? "Bs" : "$"}`, fmtNumber(amountIn(chosen.currency) / 100), amountForBank(amountIn(chosen.currency))]]) as [string, string, string | undefined, string | undefined][]
+                        : [["monto", `💰 Monto en ${chosen.currency === "VES" ? "Bs" : chosen.currency === "EUR" ? "€" : chosen.currency === "USDT" ? "USDT" : "$"}`, fmtNumber(amountIn(chosen.currency) / 100), amountForBank(amountIn(chosen.currency))]]) as [string, string, string | undefined, string | undefined][]
                 )
                   .filter(([, , v]) => v)
                   .map(([k, label, v, toCopy]) => (
@@ -395,7 +423,9 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll }: { cred
                   ? `Dale la plata a ${c.name} cuando lo veas y anótalo aquí para que te lo confirme.`
                   : chosen.id === "binance"
                     ? "Abre Binance, mándale los USDT y vuelve aquí para anotarlo."
-                    : "Abre la app de tu banco, haz el pago y vuelve aquí para anotarlo."}{" "}
+                    : chosen.id === "pago_movil"
+                      ? "Abre la app de tu banco, haz el pago y vuelve aquí para anotarlo."
+                      : "Haz el pago por este medio y vuelve aquí para anotarlo."}{" "}
                 {chosen.id === "pago_movil" && "Se copia sin puntos, guiones ni letras, como lo piden los bancos."}{" "}
                 {chosen.currency === "VES" && `Monto calculado a ${rateLabel || "BCV $"} de hoy.`}
               </p>
@@ -455,9 +485,10 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll }: { cred
             size="lg"
             className="w-full"
             loading={pending}
+            disabled={abono && (!selected[0] || amountOf(selected[0]) <= 0 || amountOf(selected[0]) > selected[0].remainingUsd || !!selected[0].cuota)}
             onClick={() =>
               start(async () => {
-                const r = await payDebts({ toUserId: c.userId, salidaIds: picked, method: chosen.id, currency: chosen.currency, reference: reference || undefined, proofId: proof?.id, cuotas });
+                const r = await payDebts({ toUserId: c.userId, salidaIds: picked, method: chosen.id, currency: chosen.currency, reference: reference || undefined, proofId: proof?.id, cuotas, amountUsd: partialAmountUsd });
                 if (r.ok) setDone({ amount: r.amount, currency: chosen.currency, name: c.name });
                 else toast(r.error, "error");
               })
@@ -480,7 +511,7 @@ export function PayWizard({ creditors, preselect, salida, aiOn, payAll }: { cred
           )}
           <span className="flex-1" />
           {step === 1 && (
-            <Button disabled={!picked.length} onClick={() => setStep(2)}>
+            <Button disabled={!picked.length || (abono && (!selectedItem || amountOf(selectedItem) <= 0 || amountOf(selectedItem) > selectedItem.remainingUsd || !!selectedItem.cuota))} onClick={() => setStep(2)}>
               Siguiente <ArrowRight size={16} />
             </Button>
           )}

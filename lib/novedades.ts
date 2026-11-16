@@ -13,6 +13,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-15.1",
+    date: "2026-11-15",
+    emoji: "💸",
+    title: "Abona una deuda por salida",
+    items: [
+      { emoji: "🧾", text: "Si debes en una salida, toca «Abonar» y elige el método que usaste: efectivo, pago móvil, punto, Zelle, Binance/USDT, Cashea, tarjeta, euros u otro. Cada abono descuenta solo esa salida." },
+      { emoji: "🤝", text: "En una salida registrada, quien cobra o la creó puede elegir quién le pagó, anotar cuánto recibió (todo o una parte) y el método. Si falta confirmación, queda pendiente como cualquier pago." },
+      { emoji: "🔋", text: "Pilas entiende los abonos por salida, sus métodos y monedas: explica cuánto se abonó y cuánto falta, y prepara la tarjeta para registrar pagos parciales o completos." },
+    ],
+  },
+  {
     id: "2026-11-09.3",
     date: "2026-11-09",
     emoji: "🔧",
